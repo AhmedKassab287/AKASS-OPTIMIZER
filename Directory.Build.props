@@ -1,0 +1,10 @@
+<Project>
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <Version>1.1.0</Version>
+    <Company>Ahmed Kassab</Company>
+    <Product>AKASS Optimizer</Product>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+</Project>

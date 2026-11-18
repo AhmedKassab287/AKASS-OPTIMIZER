@@ -1,0 +1,99 @@
+name: Windows build and GitHub release
+
+on:
+  pull_request:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build and run unit and integration checks
+        shell: pwsh
+        run: ./scripts/Test-Desktop.ps1 -SkipDesktop
+      - name: Locate or install Inno Setup
+        shell: pwsh
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
+          if (!(Test-Path -LiteralPath $iscc)) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed.' }
+          }
+          if (!(Test-Path -LiteralPath $iscc)) { throw 'ISCC.exe was not found.' }
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "AKASS_INNO_COMPILER=$iscc"
+      - name: Package and checksum
+        shell: pwsh
+        run: |
+          $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { '' }
+          ./scripts/New-Release.ps1 -InnoCompiler $env:AKASS_INNO_COMPILER -ExpectedTag $tag
+      - name: Upload files for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-packages
+          path: |
+            artifacts/release/*
+            artifacts/validation/automated-tests.txt
+          if-no-files-found: error
+
+  release:
+    if: >-
+      github.event_name == 'push' &&
+      ((github.ref_type == 'tag' && startsWith(github.ref_name, 'v')) ||
+       (github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[release]')))
+    needs: build
+    runs-on: windows-2025
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-packages
+          path: release-input
+      - name: Publish setup, portable ZIP and checksums
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = ([xml](Get-Content Directory.Build.props -Raw)).Project.PropertyGroup.Version
+          $tag = "v$version"
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -cne $tag) {
+            throw 'Version does not match the tag.'
+          }
+          $base = "AKASS-Optimizer-$version-win-x64"
+          $assets = @(
+            "release-input/release/$base-setup.exe"
+            "release-input/release/$base-portable.zip"
+            "release-input/release/$base-SHA256SUMS.txt"
+          )
+          foreach ($asset in $assets) {
+            if (!(Test-Path -LiteralPath $asset -PathType Leaf)) { throw "Missing release asset $asset" }
+          }
+          $notes = Join-Path $env:RUNNER_TEMP 'akass-release-notes.md'
+          $preamble = @(
+            '**Windows x64**'
+            ''
+            '- Run the setup EXE to install the app, or extract the portable ZIP and open `AKASS.Optimizer.exe`.'
+            '- The included SHA-256 file lists checksums for both downloads. This build is unsigned.'
+            '- Use the Source code archive below to download the files for this version.'
+            ''
+          )
+          $content = Get-Content CHANGELOG.md -Raw
+          $heading = '^## ' + [regex]::Escape($version) + '\s*\r?\n'
+          $entry = [regex]::Match($content, "(?ms)$heading(.*?)(?=^## |\z)")
+          if (!$entry.Success) { throw "Missing changelog entry for $version." }
+          $preamble + $entry.Groups[1].Value.Trim() | Set-Content -LiteralPath $notes -Encoding utf8
+          $tagOptions = if ($env:GITHUB_REF_TYPE -eq 'tag') { @('--verify-tag') } else { @('--target', $env:GITHUB_SHA) }
+          gh release create $tag @tagOptions --title "AKASS Optimizer $version" --notes-file "$notes" @assets
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub Release publication failed.' }

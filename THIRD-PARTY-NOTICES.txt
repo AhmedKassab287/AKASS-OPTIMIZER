@@ -1,0 +1,14 @@
+AKASS Optimizer uses Windows and its system components under the applicable
+Microsoft terms. The .NET Framework portable build uses the installed framework.
+
+The standard self-contained distribution includes the Microsoft .NET and Windows
+Desktop runtimes. See the official .NET sources for their licenses and notices:
+https://github.com/dotnet/runtime/blob/main/LICENSE.TXT
+https://github.com/dotnet/runtime/blob/main/THIRD-PARTY-NOTICES.TXT
+https://github.com/dotnet/wpf/blob/main/LICENSE.TXT
+https://github.com/dotnet/wpf/blob/main/THIRD-PARTY-NOTICES.TXT
+https://github.com/dotnet/winforms/blob/main/LICENSE.TXT
+https://github.com/dotnet/winforms/blob/main/THIRD-PARTY-NOTICES.TXT
+
+The optional installer is built with Inno Setup by Jordan Russell and Martijn Laan.
+https://jrsoftware.org/files/is/license.txt

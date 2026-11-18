@@ -1,0 +1,4 @@
+Copyright (c) 2026 Ahmed Kassab. All rights reserved.
+
+This project does not grant an open-source license. For licensing questions,
+contact the publisher through https://akass.dev.
