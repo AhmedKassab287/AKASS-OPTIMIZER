@@ -37,6 +37,11 @@ jobs:
         run: |
           $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { '' }
           ./scripts/New-Release.ps1 -InnoCompiler $env:AKASS_INNO_COMPILER -ExpectedTag $tag
+      - name: Verify installer branding and shortcuts
+        shell: pwsh
+        run: |
+          $version = ([xml](Get-Content Directory.Build.props -Raw)).Project.PropertyGroup.Version
+          ./scripts/Test-Installer.ps1 -SetupPath "artifacts/release/AKASS-Optimizer-$version-win-x64-setup.exe"
       - name: Upload files for review
         uses: actions/upload-artifact@v4
         with:

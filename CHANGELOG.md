@@ -1,5 +1,11 @@
 # Release notes
 
+## 1.1.1
+
+- The installer creates an AKASS Optimizer desktop shortcut by default. You can clear the shortcut option during setup.
+- The desktop and Start menu shortcuts use the AKASS application icon.
+- Release builds verify the setup icon, shortcut target, and shortcut removal during uninstall.
+
 ## 1.1.0
 
 - Added a rounded scrollbar for long pages and scrollable controls in the dark and light themes.

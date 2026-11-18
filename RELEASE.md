@@ -9,7 +9,7 @@ Use PowerShell 7 on Windows x64. Install the [.NET 10 SDK](https://dotnet.micros
 .\scripts\New-Release.ps1
 ```
 
-`artifacts/release` receives a self-contained portable ZIP, an Inno Setup executable and SHA-256 checksums. The installer runs per user, has an Apps & Features uninstall entry, preserves settings and startup shortcut backups, and requests removal of its own background registrations during uninstall. The setup launch option is unchecked by default.
+`artifacts/release` receives a self-contained portable ZIP, an Inno Setup executable and SHA-256 checksums. The installer runs per user and creates a branded Start menu entry and an optional desktop shortcut selected by default. It has an Apps & Features uninstall entry, preserves settings and startup shortcut backups, and requests removal of its own background registrations during uninstall. The setup launch option is unchecked by default.
 
 To create the .NET Framework 4.8 portable ZIP and standalone EXE, run the following. Remove `-SkipInstaller` when Inno Setup is available and an installer is needed for this build.
 
@@ -23,8 +23,8 @@ To create the .NET Framework 4.8 portable ZIP and standalone EXE, run the follow
 Update `Directory.Build.props`, the fallback version metadata in `Program.cs`, `app.manifest` and `CHANGELOG.md`. Push the commit to GitHub and review the Windows build. Push an annotated tag matching the application version to publish the tested setup EXE, portable ZIP and checksum file under GitHub Releases. GitHub adds the source archives for the tagged commit.
 
 ```powershell
-git tag -a v1.1.0 -m "AKASS Optimizer 1.1.0"
-git push origin v1.1.0
+git tag -a v1.1.1 -m "AKASS Optimizer 1.1.1"
+git push origin v1.1.1
 ```
 
 A push to `main` whose commit message contains `[release]` can also publish the version in `Directory.Build.props`. The workflow creates the tag for that exact commit. If the release already exists, publishing stops. Upload additional assets through GitHub Releases after verifying their checksums.
@@ -40,6 +40,8 @@ Get-FileHash .\artifacts\release\* -Algorithm SHA256
 ```
 
 For a signed standard release, use `dotnet publish` with the options in `New-Release.ps1` into a staging folder. Sign `AKASS.Optimizer.exe`, add the guide and notices as in the script, build the ZIP from that folder, and pass the same folder to `ISCC.exe` as `/DPackageDir=...`. Sign the resulting setup executable and regenerate checksums for the final ZIP and setup. The locally generated package is unsigned.
+
+Use a publicly trusted code-signing certificate or [Microsoft Artifact Signing](https://learn.microsoft.com/windows/apps/package-and-deploy/code-signing-options) to identify the publisher in Windows. A newly signed download can still receive a SmartScreen reputation warning. The browser decides how it displays the EXE icon in its download history.
 
 ## Publish on akass.dev
 

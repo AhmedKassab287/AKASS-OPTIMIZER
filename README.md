@@ -8,7 +8,7 @@ Open [GitHub Releases](https://github.com/AhmedKassab287/AKASS-OPTIMIZER/release
 
 | Download | How to use it |
 | --- | --- |
-| `*-setup.exe` | Run the Windows installer and open AKASS Optimizer from the Start menu. Uninstall through **Settings → Apps → Installed apps**. |
+| `*-setup.exe` | Run the Windows installer. A desktop shortcut is selected by default, and the app is also available from the Start menu. Uninstall through **Settings → Apps → Installed apps**. |
 | `*-portable.zip` | Extract the whole archive into a writable folder and run `AKASS.Optimizer.exe`. |
 | `*-framework48-portable.exe` | Run the standalone app on a Windows x64 PC with .NET Framework 4.8 or 4.8.1. Use the matching ZIP if you also want the bundled documentation. |
 | **Source code (zip)** | Extract the source or clone the repository. See [Build from source](#build-from-source). |

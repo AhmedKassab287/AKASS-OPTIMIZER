@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "1.1.0"
+  #define AppVersion "1.1.1"
 #endif
 #ifndef PackageDir
   #define PackageDir "..\artifacts\publish-win-x64"
@@ -43,8 +43,12 @@ Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"
 [Files]
 Source: "{#PackageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+[Tasks]
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
+
 [Icons]
-Name: "{userprograms}\AKASS Optimizer"; Filename: "{app}\AKASS.Optimizer.exe"
+Name: "{userprograms}\AKASS Optimizer"; Filename: "{app}\AKASS.Optimizer.exe"; WorkingDir: "{app}"; IconFilename: "{app}\AKASS.Optimizer.exe"
+Name: "{userdesktop}\AKASS Optimizer"; Filename: "{app}\AKASS.Optimizer.exe"; WorkingDir: "{app}"; IconFilename: "{app}\AKASS.Optimizer.exe"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\AKASS.Optimizer.exe"; Description: "{cm:LaunchProgram,AKASS Optimizer}"; Flags: nowait postinstall skipifsilent unchecked
