@@ -1,5 +1,9 @@
 # Release notes
 
+## 1.4.2
+
+- The performance overlay has a mouse grip for moving it directly. Releasing it saves the position, hides the panel background, and lets clicks pass through the metrics.
+
 ## 1.4.1
 
 - Move the performance overlay using Ctrl + Shift + F10 or the button in System Monitor. Its position is saved when the mouse is released and it returns to click-through mode.

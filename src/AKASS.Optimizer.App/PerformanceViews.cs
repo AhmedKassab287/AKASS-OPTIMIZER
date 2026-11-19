@@ -9,6 +9,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Effects;
 using System.Windows.Threading;
 using Forms = System.Windows.Forms;
 
@@ -21,16 +22,17 @@ internal sealed partial class MainWindow
     private const string OverlayKeys = "Ctrl + F10";
     private const string MoveOverlayKeys = "Ctrl + Shift + F10";
     private const int TransparentOverlay = 0x20;
+    private static readonly Brush OverlayMoveBackground = new SolidColorBrush(Color.FromArgb(226, 17, 24, 39));
     private HwndSource? hotkeySource;
     private bool hotkeyRegistered;
     private bool moveHotkeyRegistered;
     private Window? overlay;
+    private Window? overlayGrip;
     private TextBlock? overlayReadout;
     private Border? overlayBorder;
     private bool overlayMovable;
     private System.Drawing.Point? dragOffset;
     private DispatcherTimer? overlayDragTimer;
-    private Brush overlayOutline = null!;
 
     private Border MemoryBreakdown(out Action<Snapshot> update)
     {
@@ -168,9 +170,9 @@ internal sealed partial class MainWindow
         };
         var move = ActionButton(L("Move overlay", "تحريك شريط القياسات", "Ekran üstü göstergeyi taşı"), ToggleOverlayMove);
         AutomationProperties.SetAutomationId(move, "MovePerformanceOverlay");
-        string moveHelp = L("Drag the overlay to a new spot. Releasing the mouse saves and locks it.",
-            "اسحب شريط القياسات إلى المكان المطلوب. إفلات زر الفأرة يحفظ موضعه ويثبّته.",
-            "Göstergeyi istediğiniz yere sürükleyin. Fareyi bırakınca konum kaydedilir ve kilitlenir.");
+        string moveHelp = L("Drag the grip on the overlay to move it. Releasing the mouse saves the position and hides the background.",
+            "اسحب المقبض الموجود على شريط القياسات لتحريكه. إفلات الماوس يحفظ مكانه ويخفي الخلفية.",
+            "Göstergeyi tutamacından sürükleyin. Fareyi bırakınca konum kaydedilir ve arka plan gizlenir.");
         return Section(L("Game and hardware telemetry", "قياسات أداء الألعاب والجهاز", "Oyun ve donanım ölçümleri"), cards,
             Actions(ActionButton(L("Toggle overlay", "إظهار أو إخفاء القياسات فوق الشاشة", "Ekran üstü göstergeleri aç/kapat"), ToggleOverlay), move, driver, restart),
             Muted((moveHotkeyRegistered ? words.Technical(MoveOverlayKeys) + " · " : "") + moveHelp),
@@ -224,6 +226,7 @@ internal sealed partial class MainWindow
             FinishOverlayDrag();
             overlay.Close();
             overlay = null;
+            overlayGrip = null;
             overlayReadout = null;
             overlayBorder = null;
             overlayMovable = false;
@@ -231,24 +234,42 @@ internal sealed partial class MainWindow
             RefreshClock();
             return;
         }
-        overlayReadout = new TextBlock { Foreground = Brushes.White, FontSize = 14, FontWeight = FontWeights.SemiBold };
-        overlayOutline = new SolidColorBrush(Color.FromRgb(52, 70, 98));
-        overlayBorder = new Border { Background = new SolidColorBrush(Color.FromArgb(226, 17, 24, 39)),
-            BorderBrush = overlayOutline, BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(9), Padding = new Thickness(15, 10, 15, 10), Child = overlayReadout };
+        overlayReadout = new TextBlock { Foreground = Brushes.White, FontSize = 14, FontWeight = FontWeights.SemiBold,
+            Effect = new DropShadowEffect { Color = Colors.Black, BlurRadius = 3, ShadowDepth = 1, Opacity = 1 } };
+        overlayBorder = new Border { Background = Brushes.Transparent,
+            BorderBrush = Brushes.Transparent, BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(9), Padding = new Thickness(34, 10, 15, 10), Child = overlayReadout };
         overlay = new Window { Content = overlayBorder, Background = Brushes.Transparent, AllowsTransparency = true,
             WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, ShowActivated = false, ShowInTaskbar = false,
             Topmost = true, SizeToContent = SizeToContent.WidthAndHeight };
         ApplyReadingDirection(overlay);
         overlay.FlowDirection = FlowDirection.LeftToRight;
         overlay.SourceInitialized += (_, __) => ApplyOverlayInput();
-        overlayBorder.MouseLeftButtonDown += StartOverlayDrag;
+        overlayBorder.MouseLeftButtonDown += (_, e) => { if (overlayMovable && BeginOverlayDrag()) e.Handled = true; };
         overlayBorder.MouseLeftButtonUp += (_, __) => FinishOverlayDrag();
         UpdateOverlay();
         overlay.Show();
+        ShowOverlayGrip();
         UpdateOverlay();
         RefreshClock();
         _ = Tick();
+    }
+
+    private void ShowOverlayGrip()
+    {
+        var dots = new TextBlock { Text = "⠿", FontSize = 16, Foreground = Brushes.White,
+            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+            Effect = new DropShadowEffect { Color = Colors.Black, BlurRadius = 2, ShadowDepth = 1, Opacity = 1 } };
+        // A nonzero alpha gives the grip a mouse hit area without a visible panel.
+        var grip = new Border { Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)), Child = dots, Cursor = Cursors.SizeAll };
+        AutomationProperties.SetName(grip, L("Drag performance overlay", "اسحب لتحريك شريط القياسات", "Performans göstergesini sürükle"));
+        grip.MouseLeftButtonDown += (_, e) => { if (BeginOverlayDrag()) e.Handled = true; };
+        grip.MouseLeftButtonUp += (_, __) => FinishOverlayDrag();
+        overlayGrip = new Window { Owner = overlay, Content = grip, Background = Brushes.Transparent, AllowsTransparency = true,
+            Width = 26, Height = 28, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize,
+            ShowActivated = false, ShowInTaskbar = false, Topmost = true };
+        overlayGrip.SourceInitialized += (_, __) => ApplyOverlayWindowStyle(overlayGrip, clickThrough: false);
+        overlayGrip.Show();
     }
 
     private void UpdateOverlay()
@@ -268,7 +289,7 @@ internal sealed partial class MainWindow
         int width = size.Right - size.Left, height = size.Bottom - size.Top;
         int x = display != null ? OverlayAxis(work.Left, work.Width, width, placement!.X) : Math.Max(work.Left, work.Right - width - 14);
         int y = display != null ? OverlayAxis(work.Top, work.Height, height, placement!.Y) : Math.Min(work.Top + 14, Math.Max(work.Top, work.Bottom - height));
-        SetWindowPos(handle, IntPtr.Zero, x, y, 0, 0, 0x15);
+        PositionOverlay(handle, x, y);
     }
 
     private void ToggleOverlayMove()
@@ -285,19 +306,27 @@ internal sealed partial class MainWindow
     private void ApplyOverlayInput()
     {
         if (overlay == null || overlayBorder == null) return;
-        IntPtr handle = new WindowInteropHelper(overlay).Handle;
-        if (handle == IntPtr.Zero) return;
-        int style = GetWindowLong(handle, -20) | 0x08000080; // No activation; omit the taskbar button.
-        SetWindowLong(handle, -20, overlayMovable ? style & ~TransparentOverlay : style | TransparentOverlay);
-        SetWindowPos(handle, IntPtr.Zero, 0, 0, 0, 0, 0x37);
+        ApplyOverlayWindowStyle(overlay, clickThrough: !overlayMovable);
         overlayBorder.Cursor = overlayMovable ? Cursors.SizeAll : null;
-        overlayBorder.BorderBrush = overlayMovable ? Brushes.Turquoise : overlayOutline;
+        overlayBorder.Background = overlayMovable ? OverlayMoveBackground : Brushes.Transparent;
+        overlayBorder.BorderBrush = overlayMovable ? Brushes.Turquoise : Brushes.Transparent;
     }
 
-    private void StartOverlayDrag(object sender, MouseButtonEventArgs e)
+    private static void ApplyOverlayWindowStyle(Window? window, bool clickThrough)
     {
-        if (!overlayMovable || overlay == null || overlayBorder == null ||
-            dragOffset.HasValue || !GetWindowRect(new WindowInteropHelper(overlay).Handle, out var bounds)) return;
+        if (window == null) return;
+        IntPtr handle = new WindowInteropHelper(window).Handle;
+        if (handle == IntPtr.Zero) return;
+        int style = GetWindowLong(handle, -20) | 0x08000080; // No activation; omit the taskbar button.
+        SetWindowLong(handle, -20, clickThrough ? style | TransparentOverlay : style & ~TransparentOverlay);
+        SetWindowPos(handle, IntPtr.Zero, 0, 0, 0, 0, 0x37);
+    }
+
+    private bool BeginOverlayDrag()
+    {
+        if (overlay == null || dragOffset.HasValue || !GetWindowRect(new WindowInteropHelper(overlay).Handle, out var bounds)) return false;
+        overlayMovable = true;
+        ApplyOverlayInput();
         var cursor = Forms.Cursor.Position;
         dragOffset = new System.Drawing.Point(cursor.X - bounds.Left, cursor.Y - bounds.Top);
         overlayDragTimer = new DispatcherTimer(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(16) };
@@ -307,7 +336,7 @@ internal sealed partial class MainWindow
             else DragOverlay();
         };
         overlayDragTimer.Start();
-        e.Handled = true;
+        return true;
     }
 
     private void DragOverlay()
@@ -319,7 +348,17 @@ internal sealed partial class MainWindow
         if (!GetWindowRect(handle, out var bounds)) return;
         int x = ClampOverlayAxis(cursor.X - offset.X, work.Left, work.Width, bounds.Right - bounds.Left);
         int y = ClampOverlayAxis(cursor.Y - offset.Y, work.Top, work.Height, bounds.Bottom - bounds.Top);
-        SetWindowPos(handle, IntPtr.Zero, x, y, 0, 0, 0x15);
+        PositionOverlay(handle, x, y);
+    }
+
+    private bool PositionOverlay(IntPtr readout, int x, int y)
+    {
+        if (!SetWindowPos(readout, IntPtr.Zero, x, y, 0, 0, 0x15)) return false;
+        if (overlayGrip == null || !GetWindowRect(readout, out var bounds)) return true;
+        IntPtr grip = new WindowInteropHelper(overlayGrip).Handle;
+        if (!GetWindowRect(grip, out var area)) return true;
+        int verticalInset = Math.Max(0, (bounds.Bottom - bounds.Top - (area.Bottom - area.Top)) / 2);
+        return SetWindowPos(grip, IntPtr.Zero, bounds.Left, bounds.Top + verticalInset, 0, 0, 0x15);
     }
 
     private void FinishOverlayDrag()
@@ -362,23 +401,32 @@ internal sealed partial class MainWindow
         if (ClampOverlayAxis(-2200, -1920, 1920, 300) != -1920 ||
             OverlayAxis(-1920, 1920, 300, OverlayFraction(-900, -1920, 1920, 300)) != -900)
             throw new InvalidOperationException("Overlay positioning failed on a screen with a negative origin.");
-        ToggleOverlayMove();
+        ToggleOverlay();
         try
         {
             IntPtr handle = new WindowInteropHelper(overlay!).Handle;
-            if ((GetWindowLong(handle, -20) & TransparentOverlay) != 0 || !GetWindowRect(handle, out var bounds))
-                throw new InvalidOperationException("The overlay cannot receive mouse input in move mode.");
+            IntPtr grip = new WindowInteropHelper(overlayGrip!).Handle;
+            Dispatcher.Invoke(new Action(() => { }), DispatcherPriority.ApplicationIdle);
+            if ((GetWindowLong(handle, -20) & TransparentOverlay) == 0 || overlayBorder!.Background != Brushes.Transparent ||
+                !GetWindowRect(handle, out var bounds) || !GetWindowRect(grip, out var gripBounds) ||
+                WindowFromPoint(new System.Drawing.Point((gripBounds.Left + gripBounds.Right) / 2,
+                    (gripBounds.Top + gripBounds.Bottom) / 2)) != grip ||
+                WindowFromPoint(new System.Drawing.Point((bounds.Left + bounds.Right) / 2,
+                    (bounds.Top + bounds.Bottom) / 2)) == handle)
+                throw new InvalidOperationException("The overlay grip is not independently clickable.");
+            if (!BeginOverlayDrag() || overlayBorder.Background == Brushes.Transparent)
+                throw new InvalidOperationException("The overlay grip could not start a drag directly.");
             var screen = Forms.Screen.FromHandle(handle);
             var work = screen.WorkingArea;
             int x = OverlayAxis(work.Left, work.Width, bounds.Right - bounds.Left, 0.35);
             int y = OverlayAxis(work.Top, work.Height, bounds.Bottom - bounds.Top, 0.6);
-            if (!SetWindowPos(handle, IntPtr.Zero, x, y, 0, 0, 0x15))
+            if (!PositionOverlay(handle, x, y))
                 throw new InvalidOperationException("The overlay window could not be moved.");
-            SaveOverlayPlacement(handle);
-            ToggleOverlayMove();
+            FinishOverlayDrag();
             var saved = model.Store.ReadSettings().PerformanceOverlay;
             if (saved?.Display != screen.DeviceName || Math.Abs(saved.Y - 0.6) > 0.01 ||
-                (GetWindowLong(handle, -20) & TransparentOverlay) == 0)
+                (GetWindowLong(handle, -20) & TransparentOverlay) == 0 || overlayBorder.Background != Brushes.Transparent ||
+                !GetWindowRect(grip, out var movedGrip) || movedGrip.Left != x)
                 throw new InvalidOperationException("The overlay position was not saved or the window was not locked.");
             UpdateOverlay();
             if (!GetWindowRect(handle, out var restored) || Math.Abs(restored.Left - x) > 1 || Math.Abs(restored.Top - y) > 1)
@@ -410,4 +458,5 @@ internal sealed partial class MainWindow
     [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr owner, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
     [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int key);
     [DllImport("user32.dll")] private static extern int GetSystemMetrics(int index);
+    [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(System.Drawing.Point point);
 }

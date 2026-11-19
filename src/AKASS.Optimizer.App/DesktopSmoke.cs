@@ -77,7 +77,7 @@ internal static class DesktopSmoke
                     "PASS: " + checkedCount + " page, locale and theme scenarios. RTL applied to Arabic.\n" +
                     "PASS: settings validation and persistence, theme changes, scroll track and thumb, manual memory action and history.\n" +
                     "PASS: RAM and standby controls are independent and partial results remain visible.\n" +
-                    "PASS: Overlay move mode receives clicks, saves a new location, and returns to click-through.\n" +
+                    "PASS: The mouse grip is clickable. Releasing the overlay saves its position and restores transparent click-through.\n" +
                     "PASS: Arabic settings accept Arabic-script digits. Mixed values, versions and paths keep their reading order.\n" +
                     "PASS: The Settings update badge and accessible status follow update availability in all three languages.");
                 exit = 0;
