@@ -7,8 +7,8 @@ using System.Threading;
 using System.Windows;
 
 #if NETFRAMEWORK
-[assembly: System.Reflection.AssemblyVersion("1.3.2.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.3.2.0")]
+[assembly: System.Reflection.AssemblyVersion("1.3.3.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.3.3.0")]
 [assembly: System.Reflection.AssemblyCompany("Ahmed Kassab")]
 [assembly: System.Reflection.AssemblyProduct("AKASS Optimizer")]
 [assembly: System.Reflection.AssemblyTitle("AKASS Optimizer")]

@@ -15,8 +15,18 @@ internal sealed partial class MainWindow
     private bool checkingForUpdates;
     private bool checkedForUpdates;
     private bool updateCheckFailed;
+    private Border settingsUpdateBadge = null!;
     private Action? refreshUpdatePanel;
     internal string? PendingInstaller { get; private set; }
+
+    internal void RefreshUpdateBadge(bool isAvailable)
+    {
+        settingsUpdateBadge.Visibility = isAvailable ? Visibility.Visible : Visibility.Collapsed;
+        var settings = navigation[Page.Settings];
+        string hint = isAvailable ? L("Update available", "تحديث متاح", "Güncelleme mevcut") : "";
+        settings.ToolTip = isAvailable ? hint : null;
+        AutomationProperties.SetItemStatus(settings, hint);
+    }
 
     private Border UpdatesPanel()
     {
@@ -48,10 +58,10 @@ internal sealed partial class MainWindow
     private string UpdateMessage()
     {
         if (checkingForUpdates) return L("Checking GitHub for updates…", "جارٍ التحقق من تحديثات GitHub…", "GitHub güncellemeleri denetleniyor…");
-        if (updateCheckFailed) return L("Could not check for updates. Try again or open GitHub Releases.",
-            "تعذّر التحقق من التحديثات. أعد المحاولة أو افتح إصدارات GitHub.", "Güncellemeler denetlenemedi. Tekrar deneyin veya GitHub sürümlerini açın.");
         if (availableUpdate is { } update) return L($"Version {words.Technical(update.Version)} is available.",
             $"الإصدار {words.Technical(update.Version)} متوفر.", $"{words.Technical(update.Version)} sürümü mevcut.");
+        if (updateCheckFailed) return L("Could not check for updates. Try again or open GitHub Releases.",
+            "تعذّر التحقق من التحديثات. أعد المحاولة أو افتح إصدارات GitHub.", "Güncellemeler denetlenemedi. Tekrar deneyin veya GitHub sürümlerini açın.");
         return checkedForUpdates
             ? L($"Version {words.Technical(VersionLabel)} is up to date.", $"الإصدار {words.Technical(VersionLabel)} هو الأحدث.", $"{words.Technical(VersionLabel)} sürümü güncel.")
             : L($"Current version {words.Technical(VersionLabel)}.", $"الإصدار الحالي {words.Technical(VersionLabel)}.", $"Mevcut sürüm {words.Technical(VersionLabel)}.");
@@ -80,6 +90,7 @@ internal sealed partial class MainWindow
         finally { checkingForUpdates = false; }
 
         if (exiting) return;
+        RefreshUpdateBadge(availableUpdate != null);
         refreshUpdatePanel?.Invoke();
         if (manual || newVersion && IsVisible && !model.Busy) Status(UpdateMessage());
         if (newVersion && !IsVisible && tray.Visible && model.Preferences.Notifications)

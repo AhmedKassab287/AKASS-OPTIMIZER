@@ -1,5 +1,9 @@
 # Release notes
 
+## 1.3.3
+
+- Settings shows an update indicator in the sidebar when a newer stable version is available.
+
 ## 1.3.2
 
 - The Arabic interface keeps values, percentages, units, version numbers, and file paths in reading order inside right-to-left screens and dialogs. Arabic settings accept both `123` and Arabic-script digits for numeric fields and scheduled start times.

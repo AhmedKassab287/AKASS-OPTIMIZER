@@ -49,6 +49,7 @@ internal static class DesktopSmoke
                 }
                 await CheckSettings(view, model);
                 CheckArabicReadingOrder(view);
+                CheckUpdateBadge(view);
                 view.SmokePage(Page.Memory, "en");
                 var optimize = LogicalChildren(view).OfType<Button>().Single(x => x.Content as string == "Optimize AKASS now");
                 optimize.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
@@ -64,7 +65,8 @@ internal static class DesktopSmoke
                 File.WriteAllText(Path.Combine(folder, "ui-smoke.txt"),
                     "PASS: " + checkedCount + " page, locale and theme scenarios. RTL applied to Arabic.\n" +
                     "PASS: settings validation and persistence, theme changes, scroll track and thumb, manual memory action and history.\n" +
-                    "PASS: Arabic settings accept Arabic-script digits. Mixed values, versions and paths keep their reading order.");
+                    "PASS: Arabic settings accept Arabic-script digits. Mixed values, versions and paths keep their reading order.\n" +
+                    "PASS: The Settings update badge and accessible status follow update availability in all three languages.");
                 exit = 0;
                 view.Close();
             }
@@ -203,6 +205,32 @@ internal static class DesktopSmoke
         track.Thumb.RaiseEvent(new DragDeltaEventArgs(0, 50) { RoutedEvent = Thumb.DragDeltaEvent });
         await view.Dispatcher.InvokeAsync(view.UpdateLayout, DispatcherPriority.ApplicationIdle);
         if (viewer.VerticalOffset <= 0) throw new InvalidOperationException("Dragging the rounded thumb did not scroll the page.");
+    }
+
+    private static void CheckUpdateBadge(MainWindow view)
+    {
+        foreach (var (locale, hint) in new[] { ("en", "Update available"), ("ar", "تحديث متاح"), ("tr", "Güncelleme mevcut") })
+        {
+            view.SmokePage(Page.Dashboard, locale);
+            var settings = LogicalChildren(view).OfType<Button>().Single(item =>
+                AutomationProperties.GetAutomationId(item) == "SettingsNavigation");
+            var badge = LogicalChildren(settings).OfType<Border>().Single(item =>
+                AutomationProperties.GetAutomationId(item) == "SettingsUpdateBadge");
+            if (badge.Visibility != Visibility.Collapsed || settings.ToolTip != null)
+                throw new InvalidOperationException("The Settings badge appeared without an update.");
+            view.RefreshUpdateBadge(true);
+            if (badge.Visibility != Visibility.Visible || !Equals(settings.ToolTip, hint) ||
+                AutomationProperties.GetItemStatus(settings) != hint)
+                throw new InvalidOperationException("The Settings badge did not announce the available update.");
+
+            settings.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            if (badge.Visibility != Visibility.Visible || !LogicalChildren(view).OfType<Button>().Any(item =>
+                AutomationProperties.GetAutomationId(item) == "CheckForUpdates"))
+                throw new InvalidOperationException("Opening Settings hid the update badge or its update controls.");
+            view.RefreshUpdateBadge(false);
+            if (badge.Visibility != Visibility.Collapsed || settings.ToolTip != null || AutomationProperties.GetItemStatus(settings) != "")
+                throw new InvalidOperationException("The Settings badge did not clear when no update remained.");
+        }
     }
 
     private static IEnumerable<DependencyObject> LogicalChildren(DependencyObject root)

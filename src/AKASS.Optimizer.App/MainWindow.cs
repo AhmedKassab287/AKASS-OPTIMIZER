@@ -136,11 +136,21 @@ internal sealed partial class MainWindow : Window
             row.Children.Add(new TextBlock { Text = Glyph(destination), FontFamily = new FontFamily("Segoe MDL2 Assets"),
                 FontSize = 15, Width = 26, VerticalAlignment = VerticalAlignment.Center });
             row.Children.Add(new TextBlock { Text = PageName(destination), FontSize = 13, VerticalAlignment = VerticalAlignment.Center });
+            if (destination == Page.Settings)
+            {
+                settingsUpdateBadge = new Border { Width = 8, Height = 8, CornerRadius = new CornerRadius(4),
+                    Background = theme.Warning, Margin = new Thickness(8, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center,
+                    Visibility = Visibility.Collapsed, IsHitTestVisible = false };
+                AutomationProperties.SetAutomationId(item, "SettingsNavigation");
+                AutomationProperties.SetAutomationId(settingsUpdateBadge, "SettingsUpdateBadge");
+                row.Children.Add(settingsUpdateBadge);
+            }
             item.Content = row;
             AutomationProperties.SetName(item, PageName(destination));
             navigation.Add(destination, item);
             menu.Children.Add(item);
         }
+        RefreshUpdateBadge(availableUpdate != null);
         sidebar.Children.Add(new ScrollViewer { Content = menu, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
         layout.Children.Add(new Border { Background = theme.Side, BorderBrush = theme.Line,
             BorderThickness = new Thickness(0, 0, 1, 0), Child = sidebar });
