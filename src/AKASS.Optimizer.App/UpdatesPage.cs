@@ -31,7 +31,7 @@ internal sealed partial class MainWindow
         AutomationProperties.SetAutomationId(install, "InstallUpdate");
         refreshUpdatePanel = () =>
         {
-            message.Text = UpdateMessage();
+            ShowText(message, UpdateMessage());
             check.IsEnabled = !checkingForUpdates;
             install.Visibility = availableUpdate != null && installed ? Visibility.Visible : Visibility.Collapsed;
         };
@@ -50,11 +50,11 @@ internal sealed partial class MainWindow
         if (checkingForUpdates) return L("Checking GitHub for updates…", "جارٍ التحقق من تحديثات GitHub…", "GitHub güncellemeleri denetleniyor…");
         if (updateCheckFailed) return L("Could not check for updates. Try again or open GitHub Releases.",
             "تعذّر التحقق من التحديثات. أعد المحاولة أو افتح إصدارات GitHub.", "Güncellemeler denetlenemedi. Tekrar deneyin veya GitHub sürümlerini açın.");
-        if (availableUpdate is { } update) return L($"Version {update.Version} is available.",
-            $"الإصدار {update.Version} متوفر.", $"{update.Version} sürümü mevcut.");
+        if (availableUpdate is { } update) return L($"Version {words.Technical(update.Version)} is available.",
+            $"الإصدار {words.Technical(update.Version)} متوفر.", $"{words.Technical(update.Version)} sürümü mevcut.");
         return checkedForUpdates
-            ? L($"Version {VersionLabel} is up to date.", $"الإصدار {VersionLabel} هو الأحدث.", $"{VersionLabel} sürümü güncel.")
-            : L($"Current version {VersionLabel}.", $"الإصدار الحالي {VersionLabel}.", $"Mevcut sürüm {VersionLabel}.");
+            ? L($"Version {words.Technical(VersionLabel)} is up to date.", $"الإصدار {words.Technical(VersionLabel)} هو الأحدث.", $"{words.Technical(VersionLabel)} sürümü güncel.")
+            : L($"Current version {words.Technical(VersionLabel)}.", $"الإصدار الحالي {words.Technical(VersionLabel)}.", $"Mevcut sürüm {words.Technical(VersionLabel)}.");
     }
 
     private async Task CheckForUpdates(bool manual)
@@ -89,9 +89,9 @@ internal sealed partial class MainWindow
     private async Task InstallUpdate()
     {
         if (availableUpdate is not { } update || !GitHubUpdate.IsInstalled()) return;
-        if (!Confirm(L($"Install version {update.Version}? AKASS Optimizer will close and reopen after the update.",
-            $"هل تريد تثبيت الإصدار {update.Version}؟ سيُغلق AKASS Optimizer ويُفتح بعد التحديث.",
-            $"{update.Version} sürümü yüklensin mi? AKASS Optimizer kapanıp güncellemeden sonra yeniden açılacak."))) return;
+        if (!Confirm(L($"Install version {words.Technical(update.Version)}? AKASS Optimizer will close and reopen after the update.",
+            $"هل تريد تثبيت الإصدار {words.Technical(update.Version)}؟ سيُغلق AKASS Optimizer ويُفتح بعد التحديث.",
+            $"{words.Technical(update.Version)} sürümü yüklensin mi? AKASS Optimizer kapanıp güncellemeden sonra yeniden açılacak."))) return;
 
         PendingInstaller = await Run(L("Downloading and verifying the GitHub installer…",
             "جارٍ تنزيل مثبّت GitHub والتحقق منه…", "GitHub yükleyicisi indiriliyor ve doğrulanıyor…"),

@@ -22,6 +22,7 @@ internal sealed partial class MainWindow
             (L("Publisher", "الناشر", "Yayıncı"), "Publisher", 135),
             (L("Source", "المصدر", "Kaynak"), "Source", 120),
             (L("Status", "الحالة", "Durum"), "Status", 125));
+        TechnicalColumns(table, 0, 1);
         var location = Muted("");
         var count = Muted(L("Click Refresh to load registered startup items.", "اضغط تحديث لعرض عناصر بدء التشغيل المسجّلة.", "Kayıtlı başlangıç öğelerini yüklemek için Yenile'ye tıklayın."));
         var reload = ActionButton(L("Refresh", "تحديث", "Yenile"), () => Populate(true));
@@ -32,7 +33,7 @@ internal sealed partial class MainWindow
                 "هل تريد نقل هذا الاختصار إلى مجلد النسخ الاحتياطية القابل للاستعادة؟",
                 "Kısayol geri yüklenebilir yedeğe taşınsın mı?") :
                 L("Restore this shortcut to your Startup folder?", "هل تريد استعادة الاختصار إلى مجلد بدء التشغيل؟", "Kısayol Başlangıç klasörüne geri yüklensin mi?");
-            if (!Confirm(prompt + "\n\n" + item.Name)) return;
+            if (!Confirm(prompt + "\n\n" + words.Technical(item.Name))) return;
             await Run(L("Updating Startup folder…", "جارٍ تحديث مجلد بدء التشغيل…", "Başlangıç klasörü güncelleniyor…"),
                 token => Task.Run(() => {
                     model.Startup.Change(item.Row);
@@ -53,7 +54,7 @@ internal sealed partial class MainWindow
             var selected = table.SelectedItem as StartupView;
             manage.IsEnabled = selected?.Row.Editable == true;
             open.IsEnabled = selected != null && StartupFolder(selected.Row.Path) != null;
-            location.Text = selected?.Row.Path ?? "";
+            ShowText(location, words.Technical(selected?.Row.Path));
         };
 
         body.Children.Add(Section(L("Startup entries", "عناصر بدء التشغيل", "Başlangıç kayıtları"), table, count, location,
@@ -83,7 +84,7 @@ internal sealed partial class MainWindow
                 item.Enabled ? (item.Editable ? L("Startup folder", "مجلد بدء التشغيل", "Başlangıç klasörü") :
                     L("Registered", "مسجّل", "Kayıtlı")) : L("Backed up", "محفوظ احتياطياً", "Yedeklendi"))).ToArray();
             table.ItemsSource = translated;
-            count.Text = translated.Length + " " + L("entries found", "عناصر مكتشفة", "kayıt bulundu");
+            ShowText(count, words.Technical(translated.Length) + " " + L("entries found", "عناصر مكتشفة", "kayıt bulundu"));
             if (busy) Status("");
         }
     }
@@ -142,7 +143,7 @@ internal sealed partial class MainWindow
                 if (item.Item1 == RepairKind.BatteryReport)
                 {
                     await GenerateBatteryReport();
-                    if (latestTool != null) { output.Text = latestTool.Output; result.Text = ExitLabel(latestTool); }
+                    if (latestTool != null) { output.Text = latestTool.Output; ShowText(result, ExitLabel(latestTool)); }
                     return;
                 }
                 if (!Confirm(item.Item2 + "\n\n" + item.Item3, item.Item1 != RepairKind.DismScan)) return;
@@ -150,7 +151,7 @@ internal sealed partial class MainWindow
                     "Çalışıyor. Windows tamamlandığında yakalanan çıktı görüntülenir.");
                 latestTool = await Run(item.Item2 + "…", token => RepairService.RunAsync(item.Item1, token), false);
                 output.Text = latestTool.Output;
-                result.Text = ExitLabel(latestTool);
+                ShowText(result, ExitLabel(latestTool));
                 model.Store.Log("WindowsTool", item.Item2 + " · " + latestTool.ExitCode);
                 Status(result.Text);
             });
@@ -159,13 +160,13 @@ internal sealed partial class MainWindow
         body.Children.Add(Section(L("Diagnostic output", "مخرجات التشخيص", "Tanılama çıktısı"), result, output,
             Actions(ActionButton(L("Save output", "حفظ المخرجات", "Çıktıyı kaydet"), () =>
             {
-                if (latestTool != null) SaveText(ExitLabel(latestTool) + "\n\n" + latestTool.Output,
+                if (latestTool != null) SaveText(Akass.Optimizer.Language.PlainText(ExitLabel(latestTool)) + "\n\n" + latestTool.Output,
                     "AKASS-Windows-Tool.txt", "Text (*.txt)|*.txt");
             }))));
         return body;
     }
 
-    private string ExitLabel(ToolResult outcome) => L("Exit code", "رمز الخروج", "Çıkış kodu") + "  " + outcome.ExitCode;
+    private string ExitLabel(ToolResult outcome) => L("Exit code", "رمز الخروج", "Çıkış kodu") + "  " + words.Technical(outcome.ExitCode);
 
     private UIElement BatteryPage()
     {
@@ -179,12 +180,12 @@ internal sealed partial class MainWindow
         {
             var data = await Run(L("Reading Windows battery report…", "جارٍ قراءة تقرير بطارية Windows…", "Windows pil raporu okunuyor…"),
                 token => Task.Run(() => BatteryService.Capacity(model.Store), token), false);
-            capacity.Text = data.Count == 0 ? L("Windows did not provide battery capacities.", "لم يوفّر Windows بيانات سعة البطارية.",
+            ShowText(capacity, data.Count == 0 ? L("Windows did not provide battery capacities.", "لم يوفّر Windows بيانات سعة البطارية.",
                 "Windows pil kapasitesi bilgisi sağlamadı.") :
-                string.Join("\n\n", data.Select(x => x.Name + "\n" +
-                    L("Design capacity", "السعة التصميمية", "Tasarım kapasitesi") + "  " + Capacity(x.Design) + "   ·   " +
-                    L("Full charge", "الشحن الكامل", "Tam şarj") + "  " + Capacity(x.Full) + "   ·   " +
-                    L("Estimated wear", "التآكل المقدّر", "Tahmini yıpranma") + "  " + Percent(x.Wear * 100)));
+                string.Join("\n\n", data.Select(x => words.Technical(x.Name) + "\n" +
+                    L("Design capacity", "السعة التصميمية", "Tasarım kapasitesi") + "  " + words.Technical(Capacity(x.Design)) + "   ·   " +
+                    L("Full charge", "الشحن الكامل", "Tam şarj") + "  " + words.Technical(Capacity(x.Full)) + "   ·   " +
+                    L("Estimated wear", "التآكل المقدّر", "Tahmini yıpranma") + "  " + words.Technical(Percent(x.Wear * 100)))));
             Status("");
         }, true);
         body.Children.Add(Section(L("Battery history and capacity", "سجل البطارية وسعتها", "Pil geçmişi ve kapasite"),
@@ -192,7 +193,7 @@ internal sealed partial class MainWindow
         refreshLive = () =>
         {
             var data = BatteryService.Status();
-            charge.Value.Text = Percent(data.Percent);
+            ShowText(charge.Value, words.Technical(Percent(data.Percent)));
             charge.Caption.Text = data.Present == false ?
                 L("No battery detected", "لم تُكتشف بطارية", "Pil algılanmadı") :
                 data.Charging == true ? L("Charging", "قيد الشحن", "Şarj oluyor") : words.Unknown;
@@ -277,8 +278,8 @@ internal sealed partial class MainWindow
         refreshLive = () =>
         {
             if (model.Current is { } data)
-                stats.Text = "CPU " + Percent(data.Cpu) + "  ·  RAM " + (data.Total > 0 ? Percent(data.Load) : "—") +
-                    "  ·  " + words.EnumPressure(data.Pressure);
+                ShowText(stats, words.Technical("CPU " + Percent(data.Cpu) + "  ·  RAM " + (data.Total > 0 ? Percent(data.Load) : "—")) +
+                    "  ·  " + words.EnumPressure(data.Pressure));
         };
         if (!testMode) body.Loaded += async (_, __) =>
         {
@@ -293,10 +294,10 @@ internal sealed partial class MainWindow
             candidates = power.Item1.ToArray();
             plans.ItemsSource = candidates.Select(x => x.Name).ToArray();
             plans.SelectedIndex = Array.FindIndex(candidates, x => x.Id == power.Item2);
-            planInfo.Text = L("Active power plan", "خطة الطاقة النشطة", "Etkin güç planı") + "  ·  " +
-                (candidates.FirstOrDefault(x => x.Id == power.Item2)?.Name ?? power.Item2.ToString()) +
+            ShowText(planInfo, L("Active power plan", "خطة الطاقة النشطة", "Etkin güç planı") + "  ·  " +
+                words.Technical(candidates.FirstOrDefault(x => x.Id == power.Item2)?.Name ?? power.Item2.ToString()) +
                 (model.Preferences.OriginalPlan != Guid.Empty ? "\n" + L("A session is active or needs restoration.",
-                    "توجد جلسة نشطة أو بانتظار الاستعادة.", "Oturum etkin veya geri yükleme gerekiyor.") : "");
+                    "توجد جلسة نشطة أو بانتظار الاستعادة.", "Oturum etkin veya geri yükleme gerekiyor.") : ""));
             restore.IsEnabled = model.Preferences.OriginalPlan != Guid.Empty;
             change.IsEnabled = !restore.IsEnabled && candidates.Length > 1;
         }

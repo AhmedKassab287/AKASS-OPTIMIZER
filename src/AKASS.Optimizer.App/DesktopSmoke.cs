@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.Principal;
@@ -9,6 +10,7 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -46,6 +48,7 @@ internal static class DesktopSmoke
                     checkedCount++;
                 }
                 await CheckSettings(view, model);
+                CheckArabicReadingOrder(view);
                 view.SmokePage(Page.Memory, "en");
                 var optimize = LogicalChildren(view).OfType<Button>().Single(x => x.Content as string == "Optimize AKASS now");
                 optimize.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
@@ -60,7 +63,8 @@ internal static class DesktopSmoke
 
                 File.WriteAllText(Path.Combine(folder, "ui-smoke.txt"),
                     "PASS: " + checkedCount + " page, locale and theme scenarios. RTL applied to Arabic.\n" +
-                    "PASS: settings validation and persistence, theme changes, scroll track and thumb, manual memory action and history.");
+                    "PASS: settings validation and persistence, theme changes, scroll track and thumb, manual memory action and history.\n" +
+                    "PASS: Arabic settings accept Arabic-script digits. Mixed values, versions and paths keep their reading order.");
                 exit = 0;
                 view.Close();
             }
@@ -108,15 +112,75 @@ internal static class DesktopSmoke
             throw new InvalidOperationException("Changes did not survive persistence and the Arabic rebuild.");
         await CheckScroll(view);
 
+        Control<TextBox>("SettingsRefresh").Text = "٧";
+        Control<TextBox>("SettingsMemoryLimit").Text = "۹۶۰";
+        Save();
+        saved = model.Store.ReadSettings();
+        if (saved.Refresh != 7 || saved.AutoMemoryLimitMiB != 960 ||
+            Control<TextBox>("SettingsRefresh").FlowDirection != FlowDirection.LeftToRight ||
+            Control<TextBox>("SettingsRefresh").Text != "7" || Control<TextBox>("SettingsMemoryLimit").Text != "960")
+            throw new InvalidOperationException("Arabic numerical entry did not round-trip in Settings.");
+
         Control<ComboBox>("SettingsLanguage").SelectedIndex = 2;
         Control<ComboBox>("SettingsTheme").SelectedIndex = 0;
         Control<CheckBox>("SettingsAutoMemory").IsChecked = false;
         Save();
         saved = model.Store.ReadSettings();
-        if (saved.Language != "tr" || saved.Theme != "Dark" || saved.AutoMemory || saved.AutoMemoryLimitMiB != 768 ||
+        if (saved.Language != "tr" || saved.Theme != "Dark" || saved.AutoMemory || saved.AutoMemoryLimitMiB != 960 ||
             view.FlowDirection != FlowDirection.LeftToRight || Control<TextBox>("SettingsMemoryLimit").IsEnabled)
             throw new InvalidOperationException("Changes did not survive persistence and the Turkish rebuild.");
         await CheckScroll(view);
+    }
+
+    private static void CheckArabicReadingOrder(MainWindow view)
+    {
+        view.SmokePage(Page.About, "ar");
+        var language = new Language("ar");
+        var date = new DateTime(2026, 11, 19, 9, 35, 0);
+        if (NumberSubstitution.GetSubstitution(view) != NumberSubstitutionMethod.European ||
+            Policy.Bytes(Policy.GiB + Policy.GiB / 2) != "1.5 GiB" ||
+            Language.PlainText(language.DateLabel(date)) != "2026-11-19 09:35" ||
+            !TimeSpan.TryParseExact(Language.NormalizeNumberInput("٢٣:۵۹"), @"hh\:mm", CultureInfo.InvariantCulture, out var time) ||
+            time != new TimeSpan(23, 59, 0))
+            throw new InvalidOperationException("The Arabic number, date, or time format is inconsistent.");
+
+        string version = typeof(MainWindow).Assembly.GetName().Version!.ToString(3);
+        if (!LogicalChildren(view).OfType<TextBlock>().Any(label => label.Inlines.OfType<Run>().Any(run =>
+            run.Text.Contains(version) && run.FlowDirection == FlowDirection.LeftToRight)))
+            throw new InvalidOperationException("The Arabic version label has no isolated numeric value.");
+
+        var label = new TextBlock { FlowDirection = FlowDirection.RightToLeft, Language = view.Language };
+        NumberSubstitution.SetSubstitution(label, NumberSubstitutionMethod.European);
+        foreach (string value in new[] { "75/100", "12.5%", "1.5 GiB → 2.0 GiB", version, @"C:\Users\ملف 42\test (2).txt" })
+        {
+            string isolated = language.Technical(value);
+            Language.SetDisplayText(label, "القيمة " + isolated + " متاحة");
+            var runs = label.Inlines.OfType<Run>().ToArray();
+            if (runs.Length != 3 || runs[1].FlowDirection != FlowDirection.LeftToRight || runs[1].Text != value || Language.PlainText(isolated) != value)
+                throw new InvalidOperationException("A technical value could not be isolated for Arabic.");
+            label.Measure(new Size(600, 100));
+            label.Arrange(new Rect(0, 0, 600, 100));
+            double Position(Run run, int offset)
+            {
+                var leading = run.ContentStart.GetPositionAtOffset(offset)!.GetCharacterRect(LogicalDirection.Forward);
+                var trailing = run.ContentStart.GetPositionAtOffset(offset + 1)!.GetCharacterRect(LogicalDirection.Backward);
+                if (leading.IsEmpty || trailing.IsEmpty) throw new InvalidOperationException("Text was not laid out.");
+                return (leading.X + trailing.X) / 2;
+            }
+            var start = Position(runs[1], 0);
+            var end = Position(runs[1], value.Length - 1);
+            var arabicStart = Position(runs[0], 1);
+            var arabicEnd = Position(runs[0], 4);
+            if ((end - start) * (arabicEnd - arabicStart) >= 0)
+                throw new InvalidOperationException($"A value is rendered out of reading order: {value} ({start}, {end}; {arabicStart}, {arabicEnd}).");
+        }
+
+        view.SmokePage(Page.LargeFiles, "ar");
+        var grid = LogicalChildren(view).OfType<DataGrid>().Single();
+        if (grid.FlowDirection != FlowDirection.RightToLeft || grid.Columns.OfType<DataGridBoundColumn>().Any(column =>
+            !column.ElementStyle.Setters.OfType<Setter>().Any(setter => setter.Property == FrameworkElement.FlowDirectionProperty &&
+                (FlowDirection)setter.Value == FlowDirection.LeftToRight)))
+            throw new InvalidOperationException("The file table does not separate RTL headings from LTR values.");
     }
 
     private static async Task CheckScroll(MainWindow view)

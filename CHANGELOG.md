@@ -1,5 +1,9 @@
 # Release notes
 
+## 1.3.2
+
+- The Arabic interface keeps values, percentages, units, version numbers, and file paths in reading order inside right-to-left screens and dialogs. Arabic settings accept both `123` and Arabic-script digits for numeric fields and scheduled start times.
+
 ## 1.3.1
 
 - The overlay shows CPU usage when the temperature sensor cannot be read. System Monitor explains when the PawnIO driver or Windows permissions are needed and offers the relevant action.

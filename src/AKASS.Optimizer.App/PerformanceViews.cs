@@ -51,12 +51,12 @@ internal sealed partial class MainWindow
             for (int i = 0; i < measurements.Length; i++)
             {
                 bar.ColumnDefinitions[i].Width = new GridLength(measurements[i] ?? 0, GridUnitType.Star);
-                values[i].Text = Size(measurements[i]);
+                ShowText(values[i], words.Technical(Size(measurements[i])));
             }
-            summary.Text = L("Available", "متاحة", "Kullanılabilir") + " " + Size(data.Total > 0 ? data.Available : null) + "  ·  " +
-                L("Cached", "ذاكرة التخزين المؤقت", "Önbellek") + " " + Size(data.Cached) + "  ·  " +
-                L("Usable", "قابلة للاستخدام", "Kullanılabilir toplam") + " " + Size(data.Total > 0 ? data.Total : null) + "  ·  " +
-                L("Installed", "مركّبة", "Takılı") + " " + Size(data.Installed);
+            ShowText(summary, L("Available", "متاحة", "Kullanılabilir") + " " + words.Technical(Size(data.Total > 0 ? data.Available : null)) + "  ·  " +
+                L("Cached", "ذاكرة التخزين المؤقت", "Önbellek") + " " + words.Technical(Size(data.Cached)) + "  ·  " +
+                L("Usable", "قابلة للاستخدام", "Kullanılabilir toplam") + " " + words.Technical(Size(data.Total > 0 ? data.Total : null)) + "  ·  " +
+                L("Installed", "مركّبة", "Takılı") + " " + words.Technical(Size(data.Installed)));
         };
         return Section(L("Physical memory breakdown", "توزيع الذاكرة الفعلية", "Fiziksel bellek dağılımı"), bar, legend, summary);
     }
@@ -76,20 +76,20 @@ internal sealed partial class MainWindow
                 var before = await Task.Run(() => model.Metrics.Sample(includeNetwork: false));
                 var outcome = await Run("Standby RAM", token => RepairService.RunAsync(RepairKind.ClearStandby, token), false);
                 var after = await Task.Run(() => model.Metrics.Sample(includeNetwork: false));
-                result.Text = outcome.ExitCode == 0 ? labelsStandby(before, after) : outcome.Output;
-                model.Store.Log("ManualMemoryTools", result.Text);
+                ShowText(result, outcome.ExitCode == 0 ? labelsStandby(before, after) : outcome.Output);
+                model.Store.Log("ManualMemoryTools", Akass.Optimizer.Language.PlainText(result.Text));
                 Status("");
             }), ActionButton(L("Compact AKASS heap", "ضغط ذاكرة AKASS المدارة", "AKASS yığınını sıkıştır"), async () =>
             {
                 var resultBytes = await Run("AKASS", token => Task.Run(MemoryMaintenance.CompactAppHeap, token), false);
-                result.Text = L("AKASS managed heap", "ذاكرة AKASS المدارة", "AKASS yönetilen yığını") + "  " +
-                    Size(resultBytes.Before) + " → " + Size(resultBytes.After);
-                model.Store.Log("ManualMemoryTools", result.Text);
+                ShowText(result, L("AKASS managed heap", "ذاكرة AKASS المدارة", "AKASS yönetilen yığını") + "  " +
+                    words.MemoryChange(resultBytes.Before, resultBytes.After));
+                model.Store.Log("ManualMemoryTools", Akass.Optimizer.Language.PlainText(result.Text));
                 Status("");
             })), result);
 
         string labelsStandby(Snapshot before, Snapshot after) => L("Standby RAM", "الذاكرة الاحتياطية", "Bekleme belleği") + "  " +
-            Size(before.Standby) + " → " + Size(after.Standby);
+            words.MemoryChange(before.Standby, after.Standby);
     }
 
     internal bool PendingElevatedRestart { get; private set; }
@@ -108,36 +108,36 @@ internal sealed partial class MainWindow
         bool elevated = HardwareSensors.IsElevated();
         update = data =>
         {
-            cpu.Value.Text = Degrees(data.CpuTemperature);
-            cpu.Caption.Text = data.CpuSensorStatus switch
+            ShowText(cpu.Value, words.Technical(Degrees(data.CpuTemperature)));
+            ShowText(cpu.Caption, data.CpuSensorStatus switch
             {
                 CpuSensorStatus.DriverMissing => L("CPU temperature needs the PawnIO driver. Restart AKASS after installing it.",
                     "حرارة المعالج تتطلب تعريف PawnIO. أعد تشغيل AKASS بعد تثبيته.", "İşlemci sıcaklığı PawnIO sürücüsünü gerektirir. Kurulumdan sonra AKASS'ı yeniden başlatın."),
                 CpuSensorStatus.AccessRequired => L("Try running as administrator to access the CPU sensor.",
                     "جرّب تشغيل البرنامج كمسؤول للوصول إلى حساس حرارة المعالج.", "İşlemci sensörüne erişmek için yönetici olarak çalıştırmayı deneyin."),
-                CpuSensorStatus.Reading => SystemMetrics.CpuName,
+                CpuSensorStatus.Reading => words.Technical(SystemMetrics.CpuName),
                 _ => L("CPU temperature sensor unavailable.", "قراءة حساس حرارة المعالج غير متوفرة.", "İşlemci sıcaklık sensörü kullanılamıyor.")
-            };
-            gpu.Value.Text = Degrees(data.GpuTemperature);
-            gpu.Caption.Text = data.GpuAdapter;
-            fps.Value.Text = FramesPerSecond(data.FramesPerSecond);
-            fps.Caption.Text = data.FrameCaptureStatus switch
+            });
+            ShowText(gpu.Value, words.Technical(Degrees(data.GpuTemperature)));
+            ShowText(gpu.Caption, words.Technical(data.GpuAdapter));
+            ShowText(fps.Value, words.Technical(FramesPerSecond(data.FramesPerSecond)));
+            ShowText(fps.Caption, data.FrameCaptureStatus switch
             {
                 FrameCaptureStatus.PermissionDenied => L("Windows blocked FPS capture. Run as administrator.",
                     "منع Windows قياس الـFPS. شغّل البرنامج كمسؤول.", "Windows FPS ölçümünü engelledi. Yönetici olarak çalıştırın."),
                 FrameCaptureStatus.Unavailable => L("FPS capture tool is missing.", "أداة قياس الـFPS غير موجودة.", "FPS ölçüm aracı eksik."),
                 FrameCaptureStatus.Failed => L("FPS capture failed. Reopen the overlay to retry.", "تعذّر قياس الـFPS. أعد فتح العرض للمحاولة مجدداً.", "FPS ölçümü başarısız oldu. Tekrar denemek için ekran üstü göstergeyi açın."),
-                FrameCaptureStatus.AppSubmitted => data.FrameApp + " · " + L("Game-submitted frames", "الإطارات التي ترسلها اللعبة", "Oyunun gönderdiği kareler"),
-                FrameCaptureStatus.Displayed => data.FrameApp + " · " + L("Displayed frames", "الإطارات المعروضة", "Gösterilen kareler"),
+                FrameCaptureStatus.AppSubmitted => words.Technical(data.FrameApp) + " · " + L("Game-submitted frames", "الإطارات التي ترسلها اللعبة", "Oyunun gönderdiği kareler"),
+                FrameCaptureStatus.Displayed => words.Technical(data.FrameApp) + " · " + L("Displayed frames", "الإطارات المعروضة", "Gösterilen kareler"),
                 _ => L("Waiting for frames from the active game.", "بانتظار إطارات اللعبة النشطة.", "Etkin oyundan kare bekleniyor.")
-            };
+            });
             driver.Visibility = data.CpuSensorStatus == CpuSensorStatus.DriverMissing ? Visibility.Visible : Visibility.Collapsed;
             restart.Visibility = !elevated && (data.FrameCaptureStatus == FrameCaptureStatus.PermissionDenied ||
                 data.CpuSensorStatus == CpuSensorStatus.AccessRequired) ? Visibility.Visible : Visibility.Collapsed;
         };
         return Section(L("Game and hardware telemetry", "قياسات أداء الألعاب والجهاز", "Oyun ve donanım ölçümleri"), cards,
             Actions(ActionButton(L("Toggle overlay", "إظهار أو إخفاء القياسات فوق الشاشة", "Ekran üstü göstergeleri aç/kapat"), ToggleOverlay), driver, restart),
-            Muted(hotkeyRegistered ? OverlayKeys : L("The global shortcut is unavailable. Use the button.",
+            Muted(hotkeyRegistered ? words.Technical(OverlayKeys) : L("The global shortcut is unavailable. Use the button.",
                 "الاختصار غير متاح. استخدم الزر.", "Genel kısayol kullanılamıyor. Düğmeyi kullanın.")));
     }
 
@@ -191,6 +191,8 @@ internal sealed partial class MainWindow
         overlay = new Window { Content = background, Background = Brushes.Transparent, AllowsTransparency = true,
             WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, ShowActivated = false, ShowInTaskbar = false,
             Topmost = true, SizeToContent = SizeToContent.WidthAndHeight };
+        ApplyReadingDirection(overlay);
+        overlay.FlowDirection = FlowDirection.LeftToRight;
         overlay.SourceInitialized += (_, __) =>
         {
             IntPtr handle = new WindowInteropHelper(overlay).Handle;

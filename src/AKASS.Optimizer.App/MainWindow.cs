@@ -105,9 +105,8 @@ internal sealed partial class MainWindow : Window
         theme = new Palette(model.Preferences.Theme == "Light" ||
             (model.Preferences.Theme == "System" && WindowsPrefersLightTheme()));
         Resources = theme.Resources();
-        Language = System.Windows.Markup.XmlLanguage.GetLanguage(System.Globalization.CultureInfo.CurrentCulture.IetfLanguageTag);
+        ApplyReadingDirection(this);
         Background = theme.Canvas;
-        FlowDirection = words.Direction;
         navigation.Clear();
 
         var layout = new Grid();
@@ -122,7 +121,7 @@ internal sealed partial class MainWindow : Window
         brandText.Children.Add(Text("OPTIMIZER", 10, true, theme.Muted));
         brand.Children.Add(brandText);
         sidebar.Children.Add(brand);
-        var footer = Text("AKASS  /  V" + VersionLabel, 10, true, theme.Muted);
+        var footer = Text(words.Technical("AKASS  /  V" + VersionLabel), 10, true, theme.Muted);
         footer.Margin = new Thickness(12, 12, 0, 18);
         DockPanel.SetDock(footer, Dock.Bottom);
         sidebar.Children.Add(footer);
@@ -361,8 +360,8 @@ internal sealed partial class MainWindow : Window
 
     private void Status(string message)
     {
-        status.Text = message;
-        status.ToolTip = message;
+        ShowText(status, message);
+        status.ToolTip = Akass.Optimizer.Language.PlainText(message);
     }
 
     private void ShowError(Exception error)
@@ -383,12 +382,20 @@ internal sealed partial class MainWindow : Window
 
     private static string Short(string value, int max) => value.Length <= max ? value : value.Substring(0, max - 1) + "…";
 
-    private bool Confirm(string message, bool warning = false) => MessageBox.Show(this, message, "AKASS Optimizer",
-        MessageBoxButton.YesNo, warning ? MessageBoxImage.Warning : MessageBoxImage.Question,
-        MessageBoxResult.No) == MessageBoxResult.Yes;
+    private bool Confirm(string message, bool warning = false) => Akass.Optimizer.Language.HasTechnicalText(message)
+        ? ShowMixedDialog(message, confirmation: true, warning: warning)
+        : MessageBox.Show(this, message, "AKASS Optimizer", MessageBoxButton.YesNo,
+            warning ? MessageBoxImage.Warning : MessageBoxImage.Question, MessageBoxResult.No, DialogTextOptions) == MessageBoxResult.Yes;
 
-    private void Info(string message) => MessageBox.Show(this, message, "AKASS Optimizer",
-        MessageBoxButton.OK, MessageBoxImage.Information);
+    private void Info(string message)
+    {
+        if (Akass.Optimizer.Language.HasTechnicalText(message)) ShowMixedDialog(message, confirmation: false);
+        else MessageBox.Show(this, message, "AKASS Optimizer", MessageBoxButton.OK,
+            MessageBoxImage.Information, MessageBoxResult.OK, DialogTextOptions);
+    }
+
+    private MessageBoxOptions DialogTextOptions => words.Code == "ar"
+        ? MessageBoxOptions.RightAlign | MessageBoxOptions.RtlReading : MessageBoxOptions.None;
 
     private string PageName(Page value) => value switch
     {

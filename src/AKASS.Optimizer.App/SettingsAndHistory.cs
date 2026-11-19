@@ -18,9 +18,9 @@ internal sealed partial class MainWindow
         var settings = model.Preferences;
         var autoMemory = Check(L("Enable automatic memory optimization", "تفعيل تحسين الذاكرة التلقائي",
             "Otomatik bellek optimizasyonunu etkinleştir"), settings.AutoMemory);
-        var memoryLimitLabel = L("Optimize below available RAM (MiB)", "الحد الأدنى للذاكرة المتاحة (MiB)",
+        var memoryLimitLabel = L("Optimize below available RAM (MiB)", "الحد الأدنى للذاكرة المتاحة بالميبيبايت",
             "Kullanılabilir RAM eşiği (MiB)");
-        var memoryLimit = Input(settings.AutoMemoryLimitMiB.ToString(CultureInfo.CurrentCulture), memoryLimitLabel, 110);
+        var memoryLimit = Input(settings.AutoMemoryLimitMiB.ToString(words.Culture), memoryLimitLabel, 110, technical: true);
         memoryLimit.IsEnabled = settings.AutoMemory;
         autoMemory.Checked += (_, __) => memoryLimit.IsEnabled = true;
         autoMemory.Unchecked += (_, __) => memoryLimit.IsEnabled = false;
@@ -33,7 +33,7 @@ internal sealed partial class MainWindow
         var language = Choice(new[] { "English", "العربية", "Türkçe" }, Array.IndexOf(languages, settings.Language), languageLabel);
         var palette = Choice(new[] { L("Dark", "داكن", "Koyu"), L("Light", "فاتح", "Açık"), L("System", "النظام", "Sistem") },
             Array.IndexOf(styles, settings.Theme), themeLabel);
-        var refresh = Input(settings.Refresh.ToString(CultureInfo.CurrentCulture), pollLabel, 110);
+        var refresh = Input(settings.Refresh.ToString(words.Culture), pollLabel, 110, technical: true);
         AutomationProperties.SetAutomationId(language, "SettingsLanguage");
         AutomationProperties.SetAutomationId(palette, "SettingsTheme");
         AutomationProperties.SetAutomationId(refresh, "SettingsRefresh");
@@ -79,14 +79,14 @@ internal sealed partial class MainWindow
         var settingsActions = Actions(ActionButton(L("Save settings", "حفظ الإعدادات", "Ayarları kaydet"), () =>
         {
             if (model.Busy) throw new InvalidOperationException("Wait for the active operation.");
-            if (!int.TryParse(refresh.Text, out int interval) || interval < 1 || interval > 30)
+            if (!int.TryParse(NormalizeNumber(refresh.Text), out int interval) || interval < 1 || interval > 30)
             {
                 Status(L("Refresh interval must be between 1 and 30 seconds.", "يجب أن يكون فاصل التحديث بين ثانية و30 ثانية.",
                     "Yenileme aralığı 1 ile 30 saniye olmalıdır."));
                 return;
             }
             int limit = settings.AutoMemoryLimitMiB;
-            if (autoMemory.IsChecked == true && (!int.TryParse(memoryLimit.Text, out limit) ||
+            if (autoMemory.IsChecked == true && (!int.TryParse(NormalizeNumber(memoryLimit.Text), out limit) ||
                 limit < AutoMemoryPolicy.MinimumLimitMiB || limit > AutoMemoryPolicy.MaximumLimitMiB))
             {
                 Status(L("Enter an available RAM limit from 128 to 16384 MiB.",
@@ -157,11 +157,16 @@ internal sealed partial class MainWindow
         var options = Choice(new[] { L("Daily", "يومياً", "Günlük"), L("Weekly", "أسبوعياً", "Haftalık"),
             L("Monthly", "شهرياً", "Aylık") }, 1, L("Frequency", "التكرار", "Sıklık"));
         var first = new DatePicker { SelectedDate = DateTime.Today.AddDays(1), Width = 155, Margin = new Thickness(0, 0, 8, 6) };
-        var time = Input("10:00", L("Start time (24 hours)", "وقت البدء (24 ساعة)", "Başlangıç saati (24 saat)"), 100);
+        if (words.Code == "ar")
+        {
+            first.SelectedDateFormat = DatePickerFormat.Short;
+            first.FlowDirection = FlowDirection.LeftToRight;
+        }
+        var time = Input("10:00", L("Start time (24 hours)", "وقت البدء (24 ساعة)", "Başlangıç saati (24 saat)"), 100, technical: true);
         Button pause = null!, resume = null!, remove = null!;
         var edit = ActionButton(L("Save schedule", "حفظ الجدول", "Zamanlamayı kaydet"), async () =>
         {
-            if (!first.SelectedDate.HasValue || !TimeSpan.TryParseExact(time.Text, new[] { @"hh\:mm", @"h\:mm" },
+            if (!first.SelectedDate.HasValue || !TimeSpan.TryParseExact(NormalizeNumber(time.Text), new[] { @"hh\:mm", @"h\:mm" },
                 CultureInfo.InvariantCulture, out var clockTime) || clockTime < TimeSpan.Zero || clockTime >= TimeSpan.FromDays(1))
             {
                 Status(L("Enter a valid date and 24-hour time.", "أدخل تاريخاً ووقتاً صالحين بنظام 24 ساعة.",
@@ -218,9 +223,9 @@ internal sealed partial class MainWindow
             var state = await Task.Run(model.Schedule.Read);
             info.Text = !state.Exists || !settings.ScheduledConsent ? L("Manual only", "يدوي فقط", "Yalnızca el ile") :
                 state.Enabled ? L("Schedule active", "الجدول نشط", "Zamanlama etkin") : L("Paused", "متوقف مؤقتاً", "Duraklatıldı");
-            next.Text = L("Last", "السابق", "Son") + "  " + (state.Last?.ToString("g") ?? "—") +
-                "  ·  " + L("Next", "التالي", "Sonraki") + "  " + (state.Next?.ToString("g") ?? "—") +
-                (state.Result.HasValue ? "  ·  " + L("Result code", "رمز النتيجة", "Sonuç kodu") + "  " + state.Result.Value : "");
+            ShowText(next, L("Last", "السابق", "Son") + "  " + words.DateLabel(state.Last) +
+                "  ·  " + L("Next", "التالي", "Sonraki") + "  " + words.DateLabel(state.Next) +
+                (state.Result.HasValue ? "  ·  " + L("Result code", "رمز النتيجة", "Sonuç kodu") + "  " + words.Technical(state.Result.Value) : ""));
             pause.IsEnabled = state.Exists && state.Enabled;
             resume.IsEnabled = state.Exists && !state.Enabled && settings.ScheduledConsent;
             remove.IsEnabled = state.Exists;
@@ -262,6 +267,8 @@ internal sealed partial class MainWindow
             (L("Action", "الإجراء", "İşlem"), "Action", 200),
             (L("Result", "النتيجة", "Sonuç"), "Result", 0));
         table.MaxHeight = 490;
+        TechnicalColumns(table, 0);
+        if (words.Code == "ar") MixedTextColumn(table, 2, nameof(HistoryView.PlainResult));
         var empty = Muted("");
         void Refresh()
         {
@@ -288,6 +295,7 @@ internal sealed partial class MainWindow
         public DateTime Time { get; }
         public string Action { get; }
         public string Result { get; }
+        public string PlainResult => Akass.Optimizer.Language.PlainText(Result);
         public HistoryView(DateTime time, string action, string result) { Time = time; Action = action; Result = result; }
     }
 
@@ -296,7 +304,7 @@ internal sealed partial class MainWindow
         var export = new StringBuilder();
         foreach (var entry in model.Store.History())
             export.AppendLine(entry.Time.ToString("O", CultureInfo.InvariantCulture) + "  " +
-                words.DescribeOperation(entry.Action) + "  " + words.HistoryDetail(entry));
+                words.DescribeOperation(entry.Action) + "  " + Akass.Optimizer.Language.PlainText(words.HistoryDetail(entry)));
         SaveText(export.ToString(), "AKASS-Maintenance-History.txt", "Text (*.txt)|*.txt");
     }
 
@@ -308,7 +316,7 @@ internal sealed partial class MainWindow
             body.Children.Add(new Image { Source = Icon, Width = 70, Height = 70, HorizontalAlignment = HorizontalAlignment.Left,
                 Margin = new Thickness(0, 0, 0, 16) });
         body.Children.Add(brand);
-        body.Children.Add(Muted(VersionLabel + "  ·  Ahmed Kassab  ·  Windows x64"));
+        body.Children.Add(Muted(words.Technical(VersionLabel + "  ·  Ahmed Kassab  ·  Windows x64")));
         body.Children.Add(Intro(L("Local Windows maintenance, diagnostics and performance monitoring.",
             "صيانة Windows وتشخيصه ومراقبة الأداء محلياً.", "Yerel Windows bakımı, tanılama ve performans izleme.")));
         body.Children.Add(Actions(ActionButton("akass.dev", () => OpenShell("https://akass.dev"), true)));

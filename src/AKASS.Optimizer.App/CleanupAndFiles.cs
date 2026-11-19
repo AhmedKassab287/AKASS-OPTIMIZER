@@ -71,10 +71,10 @@ internal sealed partial class MainWindow
             var selected = choices.Values.Where(x => x.Box.IsChecked == true).Select(x => x.Group).ToArray();
             ulong total = selected.Aggregate(0UL, (bytes, group) => bytes + group.Bytes);
             apply.IsEnabled = selected.Length > 0;
-            summary.Text = L("Selected file sizes", "أحجام الملفات المحددة", "Seçilen dosya boyutları") + "  " + Size(total) +
-                " · " + selected.Sum(x => x.Count) + " " + L("items", "عنصر", "öğe") +
+            ShowText(summary, L("Selected file sizes", "أحجام الملفات المحددة", "Seçilen dosya boyutları") + "  " + words.Technical(Size(total)) +
+                " · " + words.Technical(selected.Sum(x => x.Count)) + " " + L("items", "عنصر", "öğe") +
                 (pendingScan?.Limited == true ? "\n" + L("Scan limit reached. Results are partial.",
-                    "بلغ الفحص الحد الأقصى. النتائج جزئية.", "Tarama sınırına ulaşıldı. Sonuçlar kısmi.") : "");
+                    "بلغ الفحص الحد الأقصى. النتائج جزئية.", "Tarama sınırına ulaşıldı. Sonuçlar kısmi.") : ""));
         }
 
         void Display()
@@ -96,8 +96,8 @@ internal sealed partial class MainWindow
                     choices.Add(group.Kind, (check, group));
                     check.Checked += (_, __) => Update();
                     check.Unchecked += (_, __) => Update();
-                    var note = Muted((group.IsAvailable ? Size(group.Bytes) + " · " + group.Count : words.Unknown) +
-                        (group.Skipped > 0 ? " · " + group.Skipped + " " + L("excluded", "مستثنى", "hariç") : ""));
+                    var note = Muted((group.IsAvailable ? words.Technical(Size(group.Bytes) + " · " + group.Count) : words.Unknown) +
+                        (group.Skipped > 0 ? " · " + words.Technical(group.Skipped) + " " + L("excluded", "مستثنى", "hariç") : ""));
                     var left = Body();
                     left.Children.Add(check);
                     left.Children.Add(note);
@@ -126,14 +126,14 @@ internal sealed partial class MainWindow
         if (lastCleanup is { } result)
         {
             string delta = result.SystemDriveChange is { } change ? (change >= 0 ? "+" : "−") + Size((ulong)Math.Abs((double)change)) : "—";
-            results.Text = (result.Cancelled ? L("Cancelled after completed removals.", "أُلغيت العملية بعد عمليات الحذف المكتملة.",
+            ShowText(results, (result.Cancelled ? L("Cancelled after completed removals.", "أُلغيت العملية بعد عمليات الحذف المكتملة.",
                 "Tamamlanan silmelerden sonra iptal edildi.") + "\n" : "") +
-                L("Items removed", "العناصر المحذوفة", "Kaldırılan öğeler") + "  " + result.Removed +
-                "  ·  " + L("Removed file sizes", "أحجام الملفات المحذوفة", "Kaldırılan dosya boyutları") + "  " + Size(result.LogicalBytes) +
+                L("Items removed", "العناصر المحذوفة", "Kaldırılan öğeler") + "  " + words.Technical(result.Removed) +
+                "  ·  " + L("Removed file sizes", "أحجام الملفات المحذوفة", "Kaldırılan dosya boyutları") + "  " + words.Technical(Size(result.LogicalBytes)) +
                 "\n" + L("System drive free-space change", "تغيّر المساحة المتاحة على قرص النظام", "Sistem sürücüsü boş alan değişimi") +
-                "  " + delta + "  ·  " + L("Skipped", "تم تجاوز", "Atlanan") + "  " + result.Skipped +
-                "  ·  " + L("Failed", "فشل", "Başarısız") + "  " + result.Failed +
-                (result.Issues.Count > 0 ? "\n" + string.Join("\n", result.Issues.Distinct()) : "");
+                "  " + words.Technical(delta) + "  ·  " + L("Skipped", "تم تجاوز", "Atlanan") + "  " + words.Technical(result.Skipped) +
+                "  ·  " + L("Failed", "فشل", "Başarısız") + "  " + words.Technical(result.Failed) +
+                (result.Issues.Count > 0 ? "\n" + string.Join("\n", result.Issues.Distinct().Select(words.Technical)) : ""));
             body.Children.Add(Section(L("Latest cleanup", "آخر عملية تنظيف", "Son temizlik"), results));
         }
         body.Children.Add(Section(L("Windows-managed cleanup", "التنظيف بواسطة Windows", "Windows tarafından yönetilen temizlik"),
@@ -188,10 +188,12 @@ internal sealed partial class MainWindow
         var layout = Body();
         layout.Margin = new Thickness(18);
         layout.Children.Add(Intro(text));
-        layout.Children.Add(ResultText(string.Join("\n", preview)));
+        layout.Children.Add(ResultText(string.Join("\n", preview), technical: true));
         if (group.Count > 400) layout.Children.Add(Muted(L("Showing the first 400 candidates.", "عرض أول 400 ملف مرشح.", "İlk 400 aday gösteriliyor.")));
-        new Window { Owner = this, Width = 730, Height = 440, Content = layout, Background = theme.Canvas,
-            FlowDirection = words.Direction, WindowStartupLocation = WindowStartupLocation.CenterOwner, Title = words.Category(group.Kind) }.ShowDialog();
+        var dialog = new Window { Owner = this, Width = 730, Height = 440, Content = layout, Background = theme.Canvas,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner, Title = words.Category(group.Kind) };
+        ApplyReadingDirection(dialog);
+        dialog.ShowDialog();
     }
 
     private UIElement LargeFilesPage()
@@ -201,12 +203,13 @@ internal sealed partial class MainWindow
             L("Selected folder", "المجلد المحدد", "Seçili klasör"), 320);
         selected.IsReadOnly = true;
         selected.FlowDirection = FlowDirection.LeftToRight;
-        var sizeLabel = L("Minimum size (MiB)", "الحجم الأدنى (MiB)", "En küçük boyut (MiB)");
+        var sizeLabel = L("Minimum size (MiB)", "الحجم الأدنى بالميبيبايت", "En küçük boyut (MiB)");
         var typeLabel = L("Extensions, separated by commas", "الامتدادات مفصولة بفواصل", "Uzantılar, virgülle ayırın");
-        var minimum = Input("100", sizeLabel, 105);
-        var types = Input("", typeLabel, 170);
+        var minimum = Input("100", sizeLabel, 105, technical: true);
+        var types = Input("", typeLabel, 170, technical: true);
         var fileTable = Table((L("File path", "مسار الملف", "Dosya yolu"), "Path", 0),
             (L("Size", "الحجم", "Boyut"), "Display", 110), (L("Modified", "آخر تعديل", "Değiştirilme"), "Modified", 152));
+        TechnicalColumns(fileTable, 0, 1, 2);
         fileTable.Columns[1].SortMemberPath = "Bytes";
         var summary = Muted(L("Choose a local folder or drive and scan for matching files.",
             "اختر مجلداً أو قرصاً محلياً وافحص الملفات المطابقة.", "Yerel klasör veya sürücü seçip eşleşen dosyaları tarayın."));
@@ -242,19 +245,19 @@ internal sealed partial class MainWindow
         export.IsEnabled = false;
         var scan = ActionButton(L("Scan files", "فحص الملفات", "Dosyaları tara"), async () =>
         {
-            if (!ulong.TryParse(minimum.Text, NumberStyles.Integer, CultureInfo.CurrentCulture, out var limit) || limit < 1 || limit > 1000000000)
+            if (!ulong.TryParse(NormalizeNumber(minimum.Text), NumberStyles.Integer, CultureInfo.CurrentCulture, out var limit) || limit < 1 || limit > 1000000000)
             { Status(L("Enter a positive minimum size in MiB.", "أدخل حداً أدنى موجباً بالميبيبايت.", "MiB cinsinden pozitif alt sınır girin.")); return; }
             string path = selected.Text;
             string extensions = types.Text;
-            var progress = new Progress<int>(count => Status(L("Entries examined", "العناصر المفحوصة", "İncelenen kayıtlar") + "  " + count.ToString("N0")));
+            var progress = new Progress<int>(count => Status(L("Entries examined", "العناصر المفحوصة", "İncelenen kayıtlar") + "  " + words.Technical(count.ToString("N0"))));
             var report = await Run(L("Searching for large files…", "جارٍ البحث عن الملفات الكبيرة…", "Büyük dosyalar aranıyor…"),
                 token => Task.Run(() => model.LargeFiles.Scan(path, limit * Policy.MiB, extensions, token, progress), token));
             entries = report.Files.Select(x => new FileDisplay(x)).ToArray();
             fileTable.ItemsSource = entries;
             export.IsEnabled = entries.Length > 0;
-            summary.Text = entries.Length + " " + L("matching files", "ملفات مطابقة", "eşleşen dosya") + " · " +
-                report.Skipped + " " + L("skipped", "تم تجاوزه", "atlandı") +
-                (report.Limited ? " · " + L("Partial results", "نتائج جزئية", "Kısmi sonuçlar") : "");
+            ShowText(summary, words.Technical(entries.Length) + " " + L("matching files", "ملفات مطابقة", "eşleşen dosya") + " · " +
+                words.Technical(report.Skipped) + " " + L("skipped", "تم تجاوزه", "atlandı") +
+                (report.Limited ? " · " + L("Partial results", "نتائج جزئية", "Kısmi sonuçlar") : ""));
             Status("");
         }, true);
         var sizeColumn = Body();
@@ -286,9 +289,9 @@ internal sealed partial class MainWindow
         public OwnerWindow(IntPtr handle) => Handle = handle;
     }
 
-    private TextBox ResultText(string text)
+    private TextBox ResultText(string text, bool technical = false)
     {
-        var input = Input(text, L("Output", "المخرجات", "Çıktı"));
+        var input = Input(text, L("Output", "المخرجات", "Çıktı"), technical: technical);
         input.Height = 245;
         input.Margin = new Thickness(0, 3, 0, 5);
         input.IsReadOnly = true;

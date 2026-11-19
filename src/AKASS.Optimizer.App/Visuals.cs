@@ -7,6 +7,7 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
+using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Markup;
 using System.Windows.Shapes;
@@ -154,11 +155,55 @@ internal sealed class Palette
 
 internal sealed partial class MainWindow
 {
-    private TextBlock Text(string value, double size = 14, bool emph = false, Brush? color = null) => new TextBlock
+    private void ApplyReadingDirection(FrameworkElement element)
     {
-        Text = value, FontSize = size, FontWeight = emph ? FontWeights.SemiBold : FontWeights.Normal,
-        TextWrapping = TextWrapping.Wrap, Foreground = color ?? theme.Text
-    };
+        element.Language = XmlLanguage.GetLanguage(words.Culture.IetfLanguageTag);
+        element.FlowDirection = words.Direction;
+        NumberSubstitution.SetSubstitution(element, words.Code == "ar"
+            ? NumberSubstitutionMethod.European : NumberSubstitutionMethod.AsCulture);
+    }
+
+    private TextBlock Text(string value, double size = 14, bool emph = false, Brush? color = null)
+    {
+        var label = new TextBlock { FontSize = size, FontWeight = emph ? FontWeights.SemiBold : FontWeights.Normal,
+            TextWrapping = TextWrapping.Wrap, Foreground = color ?? theme.Text };
+        ShowText(label, value);
+        return label;
+    }
+
+    private static void ShowText(TextBlock label, string value) => Akass.Optimizer.Language.SetDisplayText(label, value);
+
+    private bool ShowMixedDialog(string message, bool confirmation, bool warning = false)
+    {
+        var panel = Body();
+        panel.Margin = new Thickness(20);
+        var dialog = new Window { Owner = this, Title = "AKASS Optimizer", Icon = Icon, Content = panel,
+            Background = theme.Canvas, Width = 530, SizeToContent = SizeToContent.Height,
+            ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        ApplyReadingDirection(dialog);
+        panel.Children.Add(new ScrollViewer { Content = Text(message), MaxHeight = 420,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            BorderBrush = warning ? theme.Warning : theme.Line, BorderThickness = new Thickness(0, 0, 0, 1),
+            Padding = new Thickness(0, 0, 0, 10) });
+        var dismiss = ActionButton(confirmation ? "لا" : "حسنًا", () => { dialog.DialogResult = !confirmation; });
+        dismiss.IsCancel = true;
+        dismiss.IsDefault = true;
+        panel.Children.Add(confirmation
+            ? Actions(ActionButton("نعم", () => { dialog.DialogResult = true; }), dismiss)
+            : Actions(dismiss));
+        return dialog.ShowDialog() == true;
+    }
+
+    private RichTextBox ReportText(string report)
+    {
+        var paragraph = new Paragraph { Margin = new Thickness(0) };
+        Akass.Optimizer.Language.AddDisplayRuns(paragraph.Inlines, report);
+        var document = new FlowDocument(paragraph) { PagePadding = new Thickness(8), FlowDirection = words.Direction };
+        var output = new RichTextBox(document) { Height = 245, IsReadOnly = true, Background = theme.Canvas,
+            Foreground = theme.Text, BorderBrush = theme.Line, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        ApplyReadingDirection(output);
+        return output;
+    }
 
     private TextBlock Muted(string value)
     {
@@ -244,11 +289,12 @@ internal sealed partial class MainWindow
         return checkbox;
     }
 
-    private TextBox Input(string contents, string label, double width = 200)
+    private TextBox Input(string contents, string label, double width = 200, bool technical = false)
     {
         var input = new TextBox { Text = contents, MinWidth = width, Padding = new Thickness(6, 4, 6, 4),
             Margin = new Thickness(0, 0, 8, 6), BorderBrush = theme.Line, Foreground = theme.Text,
             Background = theme.Canvas, CaretBrush = theme.Accent, VerticalContentAlignment = VerticalAlignment.Center };
+        if (technical) input.FlowDirection = FlowDirection.LeftToRight;
         AutomationProperties.SetName(input, label);
         return input;
     }
@@ -281,14 +327,32 @@ internal sealed partial class MainWindow
             var style = new Style(typeof(TextBlock));
             style.Setters.Add(new Setter(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis));
             style.Setters.Add(new Setter(FrameworkElement.MarginProperty, new Thickness(7, 0, 5, 0)));
-            grid.Columns.Add(new DataGridTextColumn { Header = col.Heading, Binding = new Binding(col.Binding),
+            grid.Columns.Add(new DataGridTextColumn { Header = col.Heading, Binding = new Binding(col.Binding) { ConverterCulture = words.Culture },
                 ElementStyle = style, Width = col.Width == 0 ? new DataGridLength(1, DataGridLengthUnitType.Star) :
                 new DataGridLength(col.Width), MinWidth = 55, CanUserSort = true });
         }
         return grid;
     }
 
+    private static void TechnicalColumns(DataGrid table, params int[] columns)
+    {
+        foreach (int index in columns)
+            ((DataGridBoundColumn)table.Columns[index]).ElementStyle.Setters.Add(new Setter(FlowDirectionProperty, FlowDirection.LeftToRight));
+    }
+
+    private static void MixedTextColumn(DataGrid table, int index, string property)
+    {
+        var original = (DataGridBoundColumn)table.Columns[index];
+        var cell = new FrameworkElementFactory(typeof(TextBlock));
+        cell.SetValue(StyleProperty, original.ElementStyle);
+        cell.SetBinding(Akass.Optimizer.Language.DisplayTextProperty, original.Binding);
+        table.Columns[index] = new DataGridTemplateColumn { Header = original.Header, Width = original.Width,
+            MinWidth = original.MinWidth, SortMemberPath = property, ClipboardContentBinding =
+                new Binding(property), CellTemplate = new DataTemplate { VisualTree = cell } };
+    }
+
     private string Size(ulong? size) => size.HasValue ? Policy.Bytes(size.Value) : "—";
+    private static string NormalizeNumber(string text) => Akass.Optimizer.Language.NormalizeNumberInput(text);
     private string Rate(double? value) => value.HasValue && value.Value >= 0
         ? Policy.Bytes((ulong)value.Value) + "/s" : "—";
     private static string Percent(double? value) => value.HasValue ? value.Value.ToString("0.#") + "%" : "—";

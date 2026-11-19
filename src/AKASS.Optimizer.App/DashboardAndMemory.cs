@@ -59,27 +59,29 @@ internal sealed partial class MainWindow
         {
             var data = model.Current;
             if (data == null) return;
-            cpuValue.Value.Text = Percent(data.Cpu);
-            cpuValue.Caption.Text = cpuName.Length > 0 ? cpuName : Environment.ProcessorCount + " " +
-                L("logical processors", "معالجات منطقية", "mantıksal işlemci");
-            ramValue.Value.Text = data.Total > 0 ? Percent(data.Load) : "—";
-            ramValue.Caption.Text = data.Total > 0 ? Size(data.Available) + " / " + Size(data.Total) + " · " +
+            ShowText(cpuValue.Value, words.Technical(Percent(data.Cpu)));
+            ShowText(cpuValue.Caption, cpuName.Length > 0 ? words.Technical(cpuName) : words.Technical(Environment.ProcessorCount) + " " +
+                L("logical processors", "معالجات منطقية", "mantıksal işlemci"));
+            ShowText(ramValue.Value, words.Technical(data.Total > 0 ? Percent(data.Load) : "—"));
+            string ramCaption = data.Total > 0 ? words.Technical(Size(data.Available) + " / " + Size(data.Total)) + " · " +
                 words.EnumPressure(data.Pressure) : words.Unknown;
             if (data.Installed.HasValue)
-                ramValue.Caption.Text += "\n" + L("Installed", "المثبتة", "Takılı") + "  " + Size(data.Installed);
-            driveValue.Value.Text = data.DriveFree.HasValue ? Size(data.DriveFree) : "-";
-            driveValue.Caption.Text = data.Drive + " · " + Percent(data.DiskFreeRatio * 100) + " " +
-                L("free of", "متاحة من", "boş /") + " " + Size(data.DriveTotal);
+                ramCaption += "\n" + L("Installed", "المثبتة", "Takılı") + "  " + words.Technical(Size(data.Installed));
+            ShowText(ramValue.Caption, ramCaption);
+            ShowText(driveValue.Value, words.Technical(Size(data.DriveFree)));
+            string driveCaption = words.Technical(data.Drive) + " · " + words.Technical(Percent(data.DiskFreeRatio * 100)) + " " +
+                L("free of", "متاحة من", "boş /") + " " + words.Technical(Size(data.DriveTotal));
             if (data.DriveTotal >= data.DriveFree && data.DriveFree.HasValue)
-                driveValue.Caption.Text += "\n" + L("Used", "المستخدم", "Kullanılan") + "  " + Size(data.DriveTotal - data.DriveFree);
-            device.Text = "Windows " + SystemMetrics.WindowsVersion + "  ·  " + Environment.ProcessorCount + " " +
+                driveCaption += "\n" + L("Used", "المستخدم", "Kullanılan") + "  " + words.Technical(Size(data.DriveTotal - data.DriveFree));
+            ShowText(driveValue.Caption, driveCaption);
+            ShowText(device, words.Technical("Windows " + SystemMetrics.WindowsVersion) + "  ·  " + words.Technical(Environment.ProcessorCount) + " " +
                 L("logical processors", "معالجات منطقية", "mantıksal işlemci") + "  ·  " +
-                System.Runtime.InteropServices.RuntimeInformation.OSArchitecture + "  ·  " +
-                L("Uptime", "وقت التشغيل", "Çalışma süresi") + " " + SystemMetrics.Uptime.ToString(@"d\.hh\:mm") +
-                (deviceModel.Length > 0 ? "  ·  " + deviceModel : "");
+                words.Technical(System.Runtime.InteropServices.RuntimeInformation.OSArchitecture) + "  ·  " +
+                L("Uptime", "وقت التشغيل", "Çalışma süresi") + " " + words.Technical(SystemMetrics.Uptime.ToString(@"d\.hh\:mm")) +
+                (deviceModel.Length > 0 ? "  ·  " + words.Technical(deviceModel) : ""));
             history.Update(model.Series);
             var estimate = Policy.Health(data.DiskFreeRatio, model.Sustained, null, null);
-            healthScore.Text = estimate.HasValue ? estimate.Value + "/100" : "—";
+            ShowText(healthScore, words.Technical(estimate.HasValue ? estimate.Value + "/100" : "—"));
         };
         return body;
     }
@@ -100,13 +102,13 @@ internal sealed partial class MainWindow
         ulong bytes = approvedGroups.Aggregate(0UL, (total, group) => total + group.Bytes);
         bool? cleanupOpportunity = bytes >= 512 * Policy.MiB ? true : analysis.scan.Limited ? (bool?)null : false;
         var score = Policy.Health(analysis.metrics.DiskFreeRatio, model.Sustained, analysis.startupIncomplete ? null : count, cleanupOpportunity);
-        string report = L("Maintenance score", "درجة الصيانة", "Bakım puanı") + "  " + (score?.ToString() ?? "—") + "/100\n\n" +
+        string report = L("Maintenance score", "درجة الصيانة", "Bakım puanı") + "  " + words.Technical(score.HasValue ? score.Value + "/100" : "—") + "\n\n" +
             L("System drive free", "المساحة المتاحة على قرص النظام", "Sistem sürücüsünde boş alan") + "  " +
-            Percent(analysis.metrics.DiskFreeRatio * 100) + "\n" +
+            words.Technical(Percent(analysis.metrics.DiskFreeRatio * 100)) + "\n" +
             L("Memory pressure now", "ضغط الذاكرة الحالي", "Anlık bellek baskısı") + "  " +
             words.EnumPressure(analysis.metrics.Pressure) + "\n" +
             L("Discovered startup items", "عناصر بدء التشغيل المكتشفة", "Bulunan başlangıç öğeleri") + "  " + count + "\n" +
-            L("Eligible file sizes", "أحجام الملفات المؤهلة", "Uygun dosya boyutları") + "  " + Size(bytes) + "\n\n" +
+            L("Eligible file sizes", "أحجام الملفات المؤهلة", "Uygun dosya boyutları") + "  " + words.Technical(Size(bytes)) + "\n\n" +
             L("Review storage in Smart Cleaner, pressure in Memory Optimizer, and entries in Startup Manager.",
                 "راجع الملفات في التنظيف الذكي، وضغط الذاكرة في صفحة الذاكرة، والعناصر في إدارة بدء التشغيل.",
                 "Depolamayı Akıllı temizlik, baskıyı Bellek yönetimi ve kayıtları Başlangıç yönetimi sayfasında inceleyin.");
@@ -124,14 +126,15 @@ internal sealed partial class MainWindow
         }
         else
         {
-            var display = ResultText(report);
+            UIElement display = words.Code == "ar" ? ReportText(report) : ResultText(report);
             var dialog = new Window { Owner = this, Width = 560, Height = 420, WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Title = L("Health report", "تقرير الصحة", "Sağlık raporu"), Background = theme.Canvas, FlowDirection = words.Direction };
+                Title = L("Health report", "تقرير الصحة", "Sağlık raporu"), Background = theme.Canvas };
+            ApplyReadingDirection(dialog);
             var layout = Body();
             layout.Margin = new Thickness(18);
             layout.Children.Add(display);
             layout.Children.Add(Actions(ActionButton(L("Save report", "حفظ التقرير", "Raporu kaydet"),
-                () => SaveText(report, "AKASS-Health.txt", "Text (*.txt)|*.txt", dialog))));
+                () => SaveText(Akass.Optimizer.Language.PlainText(report), "AKASS-Health.txt", "Text (*.txt)|*.txt", dialog))));
             dialog.Content = layout;
             dialog.ShowDialog();
         }
@@ -165,13 +168,14 @@ internal sealed partial class MainWindow
         var autoResult = Muted("");
         void UpdateAuto()
         {
-            autoStatus.Text = model.Preferences.AutoMemory
-                ? L("Enabled", "مفعّل", "Etkin") + " · " + Policy.Bytes((ulong)model.Preferences.AutoMemoryLimitMiB * Policy.MiB)
+            string automatic = model.Preferences.AutoMemory
+                ? L("Enabled", "مفعّل", "Etkin") + " · " + words.Technical(Size((ulong)model.Preferences.AutoMemoryLimitMiB * Policy.MiB))
                 : L("Disabled", "غير مفعّل", "Devre dışı");
-            autoStatus.Text += " · " + L("Target", "التطبيق المستهدف", "Hedef") + " " +
-                (model.AutoMemoryTarget?.Name ?? "AKASS Optimizer");
-            autoResult.Text = model.LastMemoryOptimization is { } result
-                ? result.Time.ToLocalTime().ToString("g") + " · " + words.HistoryDetail(result) : "";
+            automatic += " · " + L("Target", "التطبيق المستهدف", "Hedef") + " " +
+                words.Technical(model.AutoMemoryTarget?.Name ?? "AKASS Optimizer");
+            ShowText(autoStatus, automatic);
+            ShowText(autoResult, model.LastMemoryOptimization is { } result
+                ? words.DateLabel(result.Time.ToLocalTime()) + " · " + words.HistoryDetail(result) : "");
         }
 
         var optimize = ActionButton(L("Optimize AKASS now", "حسّن ذاكرة AKASS الآن", "AKASS belleğini şimdi optimize et"), async () =>
@@ -196,14 +200,15 @@ internal sealed partial class MainWindow
             if (model.Current is not { } data) return;
             updateBreakdown(data);
             UpdateAuto();
-            physical.Value.Text = data.Total > 0 ? Size(data.Available) : "-";
-            physical.Caption.Text = data.Total > 0 ? Size(data.Total - data.Available) + " / " + Size(data.Total) + " · " +
-                Percent(data.Load) : words.Unknown;
+            ShowText(physical.Value, words.Technical(data.Total > 0 ? Size(data.Available) : "-"));
+            string physicalCaption = data.Total > 0 ? words.Technical(Size(data.Total - data.Available) + " / " + Size(data.Total)) + " · " +
+                words.Technical(Percent(data.Load)) : words.Unknown;
             if (data.Installed.HasValue)
-                physical.Caption.Text += "\n" + L("Installed", "المثبتة", "Takılı") + "  " + Size(data.Installed);
-            commit.Value.Text = Size(data.Commit);
-            commit.Caption.Text = Size(data.CommitLimit) + " · " + Percent(data.CommitRatio * 100) + " " +
-                L("of limit", "من الحد", "sınır kullanımı");
+                physicalCaption += "\n" + L("Installed", "المثبتة", "Takılı") + "  " + words.Technical(Size(data.Installed));
+            ShowText(physical.Caption, physicalCaption);
+            ShowText(commit.Value, words.Technical(Size(data.Commit)));
+            ShowText(commit.Caption, words.Technical(Size(data.CommitLimit)) + " · " + words.Technical(Percent(data.CommitRatio * 100)) + " " +
+                L("of limit", "من الحد", "sınır kullanımı"));
             pressure.Value.Text = words.EnumPressure(data.Pressure);
             pressure.Caption.Text = L("Windows low-memory signal", "إشارة Windows لنقص الذاكرة", "Windows düşük bellek sinyali")
                 + " · " + YesNo(data.WindowsLow);
@@ -239,16 +244,16 @@ internal sealed partial class MainWindow
         {
             if (model.Current is not { } data) return;
             updatePerformance(data);
-            cpu.Value.Text = Percent(data.Cpu);
-            cpu.Caption.Text = cpuName + " · " + Environment.ProcessorCount;
-            disk.Value.Text = "↓ " + Rate(data.DiskRead);
-            disk.Caption.Text = "↑ " + Rate(data.DiskWrite) + " · " + Size(data.DriveFree) + " / " + Size(data.DriveTotal);
-            network.Value.Text = "↓ " + Rate(data.Receive);
-            network.Caption.Text = "↑ " + Rate(data.Send) + " · " +
-                (data.Adapter.Length == 0 ? L("No active adapter detected", "لم يُكتشف محوّل نشط", "Etkin bağdaştırıcı bulunamadı") : data.Adapter);
-            current.Text = "● CPU " + Percent(data.Cpu) + "     ● " + L("RAM", "الذاكرة", "RAM") + " " +
-                (data.Total > 0 ? Percent(data.Load) + " · " + Size(data.Available) + " / " + Size(data.Total) : "—") +
-                " · " + words.EnumPressure(data.Pressure);
+            ShowText(cpu.Value, words.Technical(Percent(data.Cpu)));
+            ShowText(cpu.Caption, words.Technical(cpuName + " · " + Environment.ProcessorCount));
+            ShowText(disk.Value, words.Technical("↓ " + Rate(data.DiskRead)));
+            ShowText(disk.Caption, words.Technical("↑ " + Rate(data.DiskWrite) + " · " + Size(data.DriveFree) + " / " + Size(data.DriveTotal)));
+            ShowText(network.Value, words.Technical("↓ " + Rate(data.Receive)));
+            ShowText(network.Caption, words.Technical("↑ " + Rate(data.Send)) + " · " +
+                (data.Adapter.Length == 0 ? L("No active adapter detected", "لم يُكتشف محوّل نشط", "Etkin bağdaştırıcı bulunamadı") : words.Technical(data.Adapter)));
+            ShowText(current, "● CPU " + words.Technical(Percent(data.Cpu)) + "     ● " + L("RAM", "الذاكرة", "RAM") + " " +
+                (data.Total > 0 ? words.Technical(Percent(data.Load) + " · " + Size(data.Available) + " / " + Size(data.Total)) : "—") +
+                " · " + words.EnumPressure(data.Pressure));
             chart.Update(model.Series);
         };
         return body;
@@ -274,6 +279,7 @@ internal sealed partial class MainWindow
             (L("Working set", "مجموعة العمل", "Çalışma kümesi"), "Working", 110),
             (L("Private bytes", "الذاكرة الخاصة", "Özel baytlar"), "Private", 110),
             ("CPU", "Cpu", 65));
+        TechnicalColumns(table, 0, 1, 2, 3, 4);
         table.Columns[2].SortMemberPath = "WorkingBytes";
         table.Columns[3].SortMemberPath = "PrivateBytes";
         table.Columns[4].SortMemberPath = "CpuNumber";
@@ -299,7 +305,7 @@ internal sealed partial class MainWindow
             if (model.Busy || table.SelectedItem is not ProcessView selected || !selected.Row.CanClose) return;
             if (!Confirm(string.Format(L("Allow this running instance of {0} to have its working set trimmed while it is idle and in the background?",
                 "هل تسمح بتقليص الذاكرة المقيمة لهذه النسخة من {0} عندما يكون التطبيق خاملاً وفي الخلفية؟",
-                "{0} uygulamasının bu örneği arka planda ve boşta olduğunda çalışma kümesi küçültülsün mü?"), selected.Name))) return;
+                "{0} uygulamasının bu örneği arka planda ve boşta olduğunda çalışma kümesi küçültülsün mü?"), words.Technical(selected.Name)))) return;
             model.AutoMemoryTarget = selected.Row;
             onTargetChanged?.Invoke();
         });
@@ -317,9 +323,9 @@ internal sealed partial class MainWindow
         {
             if (table.SelectedItem is not ProcessView selected || !selected.Row.CanClose) return;
             if (!Confirm(L("Trim the working set of this background app?", "تقليص مجموعة عمل هذا التطبيق في الخلفية؟",
-                "Bu arka plan uygulamasının çalışma kümesi küçültülsün mü?") + "\n\n" + selected.Name)) return;
+                "Bu arka plan uygulamasının çalışma kümesi küçültülsün mü?") + "\n\n" + words.Technical(selected.Name))) return;
             var result = await Run("RAM", _ => model.OptimizeMemoryManually(selected.Row), false);
-            after.Text = words.HistoryDetail(result);
+            ShowText(after, words.HistoryDetail(result));
             onTargetChanged?.Invoke();
             Status("");
         });
@@ -336,27 +342,27 @@ internal sealed partial class MainWindow
                 Status(L("Select a running desktop application you own.", "اختر تطبيق سطح مكتب مفتوحاً بحسابك.", "Hesabınızla çalışan bir masaüstü uygulaması seçin."));
                 return;
             }
-            if (!Confirm(L($"Close {selected.Name}? Save anything you are working on first.",
-                $"هل تريد إغلاق {selected.Name}؟ احفظ عملك أولاً.",
-                $"{selected.Name} kapatılsın mı? Önce çalışmanızı kaydedin."), true)) return;
+            if (!Confirm(L($"Close {words.Technical(selected.Name)}? Save anything you are working on first.",
+                $"هل تريد إغلاق {words.Technical(selected.Name)}؟ احفظ عملك أولاً.",
+                $"{words.Technical(selected.Name)} kapatılsın mı? Önce çalışmanızı kaydedin."), true)) return;
 
             var result = await Run(L("Closing the application…", "جارٍ إغلاق التطبيق…", "Uygulama kapatılıyor…"),
                 _ => Task.Run(() => ProcessAnalyzer.StopApplication(selected.Row, force: false)), false);
             if (result.Remaining is { } remaining && Confirm(L(
-                $"{selected.Name} is still running. Force it and its background processes to exit? Unsaved work may be lost.",
-                $"ما زال {selected.Name} يعمل. هل تريد إنهاءه وإيقاف عملياته في الخلفية؟ قد تفقد العمل غير المحفوظ.",
-                $"{selected.Name} hâlâ çalışıyor. Arka plan işlemleriyle birlikte zorla kapatılsın mı? Kaydedilmeyen çalışmalar kaybolabilir."), true))
+                $"{words.Technical(selected.Name)} is still running. Force it and its background processes to exit? Unsaved work may be lost.",
+                $"ما زال {words.Technical(selected.Name)} يعمل. هل تريد إنهاءه وإيقاف عملياته في الخلفية؟ قد تفقد العمل غير المحفوظ.",
+                $"{words.Technical(selected.Name)} hâlâ çalışıyor. Arka plan işlemleriyle birlikte zorla kapatılsın mı? Kaydedilmeyen çalışmalar kaybolabilir."), true))
                 result = await Run(L("Stopping the application…", "جارٍ إنهاء التطبيق…", "Uygulama sonlandırılıyor…"),
                     _ => Task.Run(() => ProcessAnalyzer.StopApplication(remaining, force: true)), false);
 
             model.Store.Log("CloseApp", result.Result.ToString());
-            after.Text = result.Result switch
+            ShowText(after, result.Result switch
             {
-                AppStopResult.Exited => L($"{selected.Name} stopped.", $"توقف {selected.Name}.", $"{selected.Name} sonlandırıldı."),
-                AppStopResult.StillRunning => L($"{selected.Name} is still running.", $"ما زال {selected.Name} يعمل.", $"{selected.Name} hâlâ çalışıyor."),
+                AppStopResult.Exited => L($"{words.Technical(selected.Name)} stopped.", $"توقف {words.Technical(selected.Name)}.", $"{words.Technical(selected.Name)} sonlandırıldı."),
+                AppStopResult.StillRunning => L($"{words.Technical(selected.Name)} is still running.", $"ما زال {words.Technical(selected.Name)} يعمل.", $"{words.Technical(selected.Name)} hâlâ çalışıyor."),
                 _ => L("The selected process exited or Windows denied access.", "انتهت العملية المحددة بالفعل أو منع Windows الوصول إليها.",
                     "Seçilen işlem sona erdi veya Windows erişimi engelledi.")
-            };
+            });
             lastProcessRefresh = DateTime.MinValue;
             Status("");
         });
