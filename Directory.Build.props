@@ -2,7 +2,7 @@
   <PropertyGroup>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
-    <Version>1.4.0</Version>
+    <Version>1.4.1</Version>
     <Company>Ahmed Kassab</Company>
     <Product>AKASS Optimizer</Product>
     <Deterministic>true</Deterministic>

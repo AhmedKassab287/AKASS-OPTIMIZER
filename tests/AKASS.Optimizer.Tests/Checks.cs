@@ -139,6 +139,10 @@ internal static class Checks
                     Equal(1, ProcessAnalyzer.TrimBackgroundWorkingSets(new[] { row }, requireUserIdle: false));
                     process.Refresh();
                     True(!process.HasExited && process.WorkingSet64 < before);
+                    row.Working = 8 * Policy.MiB;
+                    Equal(0, ProcessAnalyzer.TrimBackgroundWorkingSets(new[] { row }, requireUserIdle: false));
+                    Equal(1, ProcessAnalyzer.TrimBackgroundWorkingSets(new[] { row }, requireUserIdle: false, deepClean: true));
+                    True(!process.HasExited);
                 }
                 finally
                 {

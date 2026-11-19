@@ -93,11 +93,11 @@ public sealed class DesktopModel : INotifyPropertyChanged
         return record;
     }
 
-    public async Task OptimizeMemoryAsync(bool freeRam, bool emptyStandby, CancellationToken token)
+    public async Task OptimizeMemoryAsync(bool freeRam, bool emptyStandby, bool deepClean, CancellationToken token)
     {
         var before = await Task.Run(() => Metrics.Sample(includeNetwork: false), token);
         int? trimmed = freeRam ? await Task.Run(() => ProcessAnalyzer.TrimBackgroundWorkingSets(Processes.Sample(),
-            requireUserIdle: false), token) : (int?)null;
+            requireUserIdle: false, deepClean: deepClean), token) : (int?)null;
         string standby = "";
         if (emptyStandby)
         {
@@ -143,7 +143,9 @@ public sealed class DesktopModel : INotifyPropertyChanged
     {
         ulong? availableBefore = before.Total > 0 ? before.Available : (ulong?)null;
         ulong? availableAfter = after.Total > 0 ? after.Available : (ulong?)null;
-        string detail = FormattableString.Invariant($"batch|{trimmed}|{availableBefore}|{availableAfter}|{standby}|{before.Standby}|{after.Standby}");
+        string Usage(Snapshot sample) => sample.Total > 0 && sample.PhysicalInUse is ulong used
+            ? (100d * used / sample.Total).ToString("0.#", CultureInfo.InvariantCulture) : "";
+        string detail = FormattableString.Invariant($"batch|{trimmed}|{availableBefore}|{availableAfter}|{standby}|{before.Standby}|{after.Standby}|{Usage(before)}|{Usage(after)}");
         Store.Log(action, detail);
         return new ActivityRecord { Action = action, Detail = detail };
     }

@@ -159,7 +159,7 @@ internal sealed class Language
         var parts = record.Detail.Split('|');
         if (record.Action is "AutoMemory" or "ManualMemory")
         {
-            if (parts.Length == 7 && parts[0] == "batch") return BatchMemoryDetail(parts);
+            if ((parts.Length == 7 || parts.Length == 9) && parts[0] == "batch") return BatchMemoryDetail(parts);
             if (parts.Length == 5 && ulong.TryParse(parts[1], out var before) && ulong.TryParse(parts[2], out var after) &&
                 ulong.TryParse(parts[3], out var freeBefore) && ulong.TryParse(parts[4], out var freeAfter))
                 return string.Format(Pick("{0} · Working set {1} · Available RAM {2}",
@@ -200,6 +200,10 @@ internal sealed class Language
             _ => null
         };
         if (standby != null) details.Add(standby);
+        if (parts.Length == 9 && double.TryParse(parts[7], NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out double usedBefore) &&
+            double.TryParse(parts[8], NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out double usedAfter))
+            details.Add(Pick("RAM in use", "الذاكرة قيد الاستخدام", "Kullanılan RAM") + " " +
+                Technical(usedBefore.ToString("0.#", Culture) + "% → " + usedAfter.ToString("0.#", Culture) + "%"));
         details.Add(Pick("Available RAM", "الذاكرة المتاحة", "Kullanılabilir RAM") + " " + MemoryChange(ReadBytes(2), ReadBytes(3)));
         return string.Join(" · ", details);
     }

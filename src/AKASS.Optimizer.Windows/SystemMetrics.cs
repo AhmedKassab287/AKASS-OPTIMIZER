@@ -25,6 +25,8 @@ public sealed class Snapshot
     public ulong? Standby { get; set; }
     public ulong? Modified { get; set; }
     public ulong? Cached => Standby + Modified;
+    public ulong? PhysicalInUse => FreePages is ulong free && Standby is ulong standby && Modified is ulong modified &&
+        free <= Total && standby <= Total - free && modified <= Total - free - standby ? Total - free - standby - modified : (ulong?)null;
     public ulong? HardwareReserved => Installed >= Total && Total > 0 ? Installed - Total : null;
     public double? CpuTemperature { get; set; }
     public CpuSensorStatus CpuSensorStatus { get; set; }
@@ -421,10 +423,11 @@ public sealed class ProcessAnalyzer
         return !handle.IsInvalid && QueryFullProcessImageName(handle, 0, path, ref length) ? path.ToString() : "";
     }
 
-    public static int TrimBackgroundWorkingSets(IReadOnlyList<ProcessRow> processes, bool requireUserIdle)
+    public static int TrimBackgroundWorkingSets(IReadOnlyList<ProcessRow> processes, bool requireUserIdle, bool deepClean = false)
     {
-        const int maximumTargets = 24;
-        const ulong minimumWorkingSet = 16 * Policy.MiB;
+        deepClean = deepClean && !requireUserIdle;
+        int maximumTargets = deepClean ? 128 : 24;
+        ulong minimumWorkingSet = (deepClean ? 4UL : 16UL) * Policy.MiB;
         const uint trimAccess = 0x0100 | 0x0010;
         var candidates = new List<(int Pid, string Image, SafeFileHandle Handle, long Cpu)>();
         try
@@ -436,9 +439,10 @@ public sealed class ProcessAnalyzer
                 SafeFileHandle? handle = null;
                 try
                 {
+                    long cpu = 0;
                     if (row.Pid == foreground.Pid || !TryOpenApp(row.Pid, row.Started, null, false,
                         out var image, out handle, trimAccess) || !IsBackground(row.Pid, image, foreground) ||
-                        !TryCpuTime(handle!, out long cpu)) continue;
+                        (!deepClean && !TryCpuTime(handle!, out cpu))) continue;
                     candidates.Add((row.Pid, image, handle!, cpu));
                     handle = null; // The batch now owns this verified handle.
                 }
@@ -447,13 +451,13 @@ public sealed class ProcessAnalyzer
             }
 
             if (candidates.Count == 0) return 0;
-            System.Threading.Thread.Sleep(450);
+            if (!deepClean) System.Threading.Thread.Sleep(450);
             int trimmed = 0;
             foreach (var candidate in candidates)
             {
                 if (requireUserIdle && (SystemMetrics.UserIdle() is not { } idle || idle < AutoMemoryPolicy.IdlePeriod)) break;
                 if (!IsBackground(candidate.Pid, candidate.Image, ForegroundApp()) ||
-                    !TryCpuTime(candidate.Handle, out long cpu) || cpu - candidate.Cpu > TimeSpan.FromMilliseconds(10).Ticks ||
+                    (!deepClean && (!TryCpuTime(candidate.Handle, out long cpu) || cpu - candidate.Cpu > TimeSpan.FromMilliseconds(10).Ticks)) ||
                     WaitForSingleObject(candidate.Handle, 0) != 0x102) continue;
                 if (EmptyWorkingSet(candidate.Handle)) trimmed++;
             }

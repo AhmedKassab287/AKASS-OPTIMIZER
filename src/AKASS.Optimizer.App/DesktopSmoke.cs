@@ -50,16 +50,19 @@ internal static class DesktopSmoke
                 await CheckSettings(view, model);
                 CheckArabicReadingOrder(view);
                 CheckUpdateBadge(view);
+                view.SmokePage(Page.Monitor, "en");
+                view.SmokeOverlayPlacement();
                 view.SmokePage(Page.Memory, "en");
                 var memoryOptions = LogicalChildren(view).OfType<CheckBox>().ToDictionary(control =>
                     AutomationProperties.GetAutomationId(control), control => control.IsChecked);
                 if (memoryOptions["MemoryFreeRamOption"] != true || memoryOptions["MemoryStandbyOption"] != false ||
+                    memoryOptions["MemoryDeepOption"] != false ||
                     !LogicalChildren(view).OfType<Button>().Any(x => AutomationProperties.GetAutomationId(x) == "MemoryOptimizeNow"))
                     throw new InvalidOperationException("Manual memory controls do not expose the two options safely by default.");
-                var partial = new ActivityRecord { Action = "ManualMemory", Detail = "batch|2|1048576|2097152|cancelled|1048576|1048576" };
+                var partial = new ActivityRecord { Action = "ManualMemory", Detail = "batch|2|1048576|2097152|cancelled|1048576|1048576|42|33" };
                 string summary = new Language("en").HistoryDetail(partial);
                 if (!summary.Contains("Processes trimmed 2") || !summary.Contains("Standby clearing cancelled") ||
-                    !summary.Contains("1.0 MiB → 2.0 MiB"))
+                    !summary.Contains("1.0 MiB → 2.0 MiB") || !summary.Contains("42% → 33%"))
                     throw new InvalidOperationException("A partially successful memory run does not show both outcomes.");
                 await model.OptimizeMemoryManually();
                 if (model.LastMemoryOptimization?.Detail.Split('|').Length != 5 ||
@@ -74,6 +77,7 @@ internal static class DesktopSmoke
                     "PASS: " + checkedCount + " page, locale and theme scenarios. RTL applied to Arabic.\n" +
                     "PASS: settings validation and persistence, theme changes, scroll track and thumb, manual memory action and history.\n" +
                     "PASS: RAM and standby controls are independent and partial results remain visible.\n" +
+                    "PASS: Overlay move mode receives clicks, saves a new location, and returns to click-through.\n" +
                     "PASS: Arabic settings accept Arabic-script digits. Mixed values, versions and paths keep their reading order.\n" +
                     "PASS: The Settings update badge and accessible status follow update availability in all three languages.");
                 exit = 0;

@@ -99,6 +99,7 @@ internal sealed partial class MainWindow
                 Background = background.IsChecked == true, Notifications = notification.IsChecked == true,
                 Advanced = advanced.IsChecked == true, Refresh = interval, Sensitivity = sensitivity.SelectedIndex + 1,
                 AutoMemory = autoMemory.IsChecked == true, AutoMemoryLimitMiB = limit,
+                PerformanceOverlay = settings.PerformanceOverlay,
                 CleanupDefaults = safeDefaults.Where(x => x.box.IsChecked == true).Select(x => x.kind.ToString()).ToArray(),
                 ScheduledConsent = settings.ScheduledConsent, OriginalPlan = settings.OriginalPlan, GamingPlan = settings.GamingPlan
             };

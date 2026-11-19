@@ -11,6 +11,14 @@ using System.Runtime.Serialization.Json;
 namespace Akass.Optimizer;
 
 [DataContract]
+public sealed class OverlayPlacement
+{
+    [DataMember] public string Display { get; set; } = "";
+    [DataMember] public double X { get; set; }
+    [DataMember] public double Y { get; set; }
+}
+
+[DataContract]
 public sealed class Preferences
 {
     [DataMember] public string Language { get; set; } = "en";
@@ -27,6 +35,7 @@ public sealed class Preferences
     [DataMember] public bool ScheduledConsent { get; set; }
     [DataMember] public Guid OriginalPlan { get; set; }
     [DataMember] public Guid GamingPlan { get; set; }
+    [DataMember(EmitDefaultValue = false)] public OverlayPlacement? PerformanceOverlay { get; set; }
 
     [OnDeserializing]
     private void Defaults(StreamingContext context)
@@ -47,6 +56,8 @@ public sealed class Preferences
         Sensitivity = Math.Max(1, Math.Min(3, Sensitivity));
         AutoMemoryLimitMiB = Math.Max(AutoMemoryPolicy.MinimumLimitMiB,
             Math.Min(AutoMemoryPolicy.MaximumLimitMiB, AutoMemoryLimitMiB));
+        if (PerformanceOverlay is { } position && (string.IsNullOrWhiteSpace(position.Display) ||
+            !(position.X >= 0 && position.X <= 1 && position.Y >= 0 && position.Y <= 1))) PerformanceOverlay = null;
         CleanupDefaults = (CleanupDefaults ?? Array.Empty<string>())
             .Where(id => id == "UserTemp" || id == "WindowsTemp" || id == "Chrome" || id == "Edge" ||
                 id == "Firefox" || id == "Thumbnails" || id == "Reports" || id == "Dumps")

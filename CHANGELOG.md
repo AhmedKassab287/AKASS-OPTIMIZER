@@ -1,5 +1,10 @@
 # Release notes
 
+## 1.4.1
+
+- Move the performance overlay using Ctrl + Shift + F10 or the button in System Monitor. Its position is saved when the mouse is released and it returns to click-through mode.
+- A manual Deeper RAM trim option includes active background processes and reports physical RAM in use before and after when Windows exposes the required counters.
+
 ## 1.4.0
 
 - Memory Optimizer adds a single Optimize now button for Free up RAM and optional Empty standby RAM. The result shows processed background processes and memory before and after.
