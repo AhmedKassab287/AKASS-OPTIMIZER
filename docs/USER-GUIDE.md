@@ -30,7 +30,7 @@ Open Startup Manager to inspect Run registrations and Startup folders. Use **Dis
 
 ## Diagnostics, gaming and maintenance
 
-Open **System Monitor** for CPU/GPU temperatures and displayed FPS. **Ctrl + Alt + F10** and the **Toggle overlay** button show or hide the top-right overlay. Keep AKASS running and use borderless or windowed mode for games. FPS follows the foreground graphics application and depends on Windows tracing permissions. Hardware sensors determine which temperatures are available. Some CPU sensors require the official PawnIO driver or elevated access. Dashes show missing readings. This telemetry requires the standard release rather than the Framework fallback.
+Open **System Monitor** for CPU/GPU temperatures and displayed FPS. **Ctrl + F10** and the **Toggle overlay** button show or hide the top-right overlay. Keep AKASS running and use borderless or windowed mode for games. FPS follows the foreground graphics application and depends on Windows tracing permissions. Hardware sensors determine which temperatures are available. Some CPU sensors require the official PawnIO driver or elevated access. Dashes show missing readings. This telemetry requires the standard release rather than the Framework fallback.
 
 Large Files lists candidates by size and file extension, lets you open their folders and exports a CSV. Use File Explorer to manage those files. Battery Health reports data Windows exposes and can create a battery report. SFC, DISM and DNS flush can prompt for administrator access. They run only after you choose a known operation and confirm it. DNS flush is for troubleshooting connectivity and name resolution.
 

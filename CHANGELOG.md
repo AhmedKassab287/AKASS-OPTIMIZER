@@ -1,5 +1,9 @@
 # Release notes
 
+## 1.2.1
+
+- The global telemetry overlay uses a two-key shortcut, Ctrl+F10. The System Monitor button also toggles the overlay.
+
 ## 1.2.0
 
 - Manual cleanup scans all eligible file types in approved user and Windows Temp folders. Advanced cleanup previews old Prefetch traces. Smart Cleaner includes a separate DNS cache action.

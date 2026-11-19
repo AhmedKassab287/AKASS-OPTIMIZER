@@ -13,7 +13,7 @@ namespace Akass.Optimizer;
 internal sealed partial class MainWindow
 {
     private const int OverlayHotkey = 71;
-    private const string OverlayKeys = "Ctrl + Alt + F10";
+    private const string OverlayKeys = "Ctrl + F10";
     private HwndSource? hotkeySource;
     private bool hotkeyRegistered;
     private Window? overlay;
@@ -123,7 +123,7 @@ internal sealed partial class MainWindow
         hotkeySource = PresentationSource.FromVisual(this) as HwndSource;
         if (hotkeySource == null) return;
         hotkeySource.AddHook(OverlayMessage);
-        hotkeyRegistered = RegisterHotKey(hotkeySource.Handle, OverlayHotkey, 0x4003, 0x79);
+        hotkeyRegistered = RegisterHotKey(hotkeySource.Handle, OverlayHotkey, 0x4002, 0x79);
     }
 
     private IntPtr OverlayMessage(IntPtr handle, int message, IntPtr param, IntPtr data, ref bool handled)
