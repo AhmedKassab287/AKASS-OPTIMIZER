@@ -15,8 +15,17 @@ internal static class Checks
     private static int passed;
     private static int skipped;
 
-    public static int Main()
+    public static int Main(string[] args)
     {
+        if (args.SequenceEqual(new[] { "--working-set-fixture" }))
+        {
+            var pages = new byte[48 * 1024 * 1024];
+            for (int i = 0; i < pages.Length; i += 4096) pages[i] = 1;
+            Console.WriteLine("Ready");
+            Console.ReadLine();
+            GC.KeepAlive(pages);
+            return 0;
+        }
         var root = Path.Combine(Path.GetTempPath(), "AKASS-Tests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try
@@ -99,6 +108,43 @@ internal static class Checks
                 True(result.HasValue && result.Value.Before >= 16 * Policy.MiB &&
                     result.Value.After < result.Value.Before);
                 GC.KeepAlive(pages);
+            });
+            Test("background RAM trim keeps the process alive and rejects an old PID identity", () =>
+            {
+                var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                if (FrameMonitor.ForegroundWindow == IntPtr.Zero || HardwareSensors.IsElevated() || !Policy.Inside(local, root))
+                {
+                    Skip("The background trim fixture needs an interactive unelevated Windows session.");
+                    return;
+                }
+                string folder = Under(root, "trim-app");
+                foreach (string file in Directory.EnumerateFiles(AppDomain.CurrentDomain.BaseDirectory))
+                    if (Path.GetFileName(file).StartsWith("AKASS.Optimizer.Tests.", StringComparison.OrdinalIgnoreCase) ||
+                        file.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                        File.Copy(file, Path.Combine(folder, Path.GetFileName(file)));
+                using var process = Process.Start(new ProcessStartInfo(Path.Combine(folder, "AKASS.Optimizer.Tests.exe"), "--working-set-fixture")
+                {
+                    UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, CreateNoWindow = true
+                }) ?? throw new InvalidOperationException("Could not start the memory fixture.");
+                try
+                {
+                    var ready = process.StandardOutput.ReadLineAsync();
+                    True(ready.Wait(10000) && ready.Result == "Ready");
+                    process.Refresh();
+                    long before = process.WorkingSet64;
+                    long started = process.StartTime.ToUniversalTime().Ticks;
+                    var row = new ProcessRow { Pid = process.Id, Started = started - 1, Working = (ulong)before };
+                    Equal(0, ProcessAnalyzer.TrimBackgroundWorkingSets(new[] { row }, requireUserIdle: false));
+                    row.Started = started;
+                    Equal(1, ProcessAnalyzer.TrimBackgroundWorkingSets(new[] { row }, requireUserIdle: false));
+                    process.Refresh();
+                    True(!process.HasExited && process.WorkingSet64 < before);
+                }
+                finally
+                {
+                    if (!process.HasExited) process.StandardInput.WriteLine("exit");
+                    if (!process.WaitForExit(2000)) process.Kill();
+                }
             });
             Test("health scoring and missing values", () =>
             {

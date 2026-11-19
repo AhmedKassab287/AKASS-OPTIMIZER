@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -92,6 +93,27 @@ public sealed class DesktopModel : INotifyPropertyChanged
         return record;
     }
 
+    public async Task OptimizeMemoryAsync(bool freeRam, bool emptyStandby, CancellationToken token)
+    {
+        var before = await Task.Run(() => Metrics.Sample(includeNetwork: false), token);
+        int? trimmed = freeRam ? await Task.Run(() => ProcessAnalyzer.TrimBackgroundWorkingSets(Processes.Sample(),
+            requireUserIdle: false), token) : (int?)null;
+        string standby = "";
+        if (emptyStandby)
+        {
+            try
+            {
+                standby = (await RepairService.RunAsync(RepairKind.ClearStandby, token)).ExitCode == 0 ? "cleared" : "failed";
+            }
+            catch (Win32Exception error) { standby = error.NativeErrorCode == 1223 ? "cancelled" : "failed"; }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException)
+            { standby = "failed"; }
+        }
+
+        var after = await Task.Run(() => Metrics.Sample(includeNetwork: false), token);
+        LastMemoryOptimization = LogBatchMemory("ManualMemory", trimmed, before, after, standby);
+    }
+
     private ActivityRecord OptimizeMemory(ProcessRow? target, int? automaticLimit)
     {
         string action = automaticLimit.HasValue ? "AutoMemory" : "ManualMemory";
@@ -101,12 +123,27 @@ public sealed class DesktopModel : INotifyPropertyChanged
             SystemMetrics.UserIdle() is not { } idle || idle < AutoMemoryPolicy.IdlePeriod))
             return new ActivityRecord { Action = action, Detail = "recovered" };
 
+        if (automaticLimit.HasValue && target == null)
+        {
+            int trimmed = ProcessAnalyzer.TrimBackgroundWorkingSets(Processes.Sample(), requireUserIdle: true);
+            return LogBatchMemory(action, trimmed, before, Metrics.Sample(includeNetwork: false), "");
+        }
+
         var measured = ProcessAnalyzer.TrimWorkingSet(target, requireUserIdle: automaticLimit.HasValue);
         var after = Metrics.Sample(includeNetwork: false);
         string detail = measured is { } trim
             ? string.Format(CultureInfo.InvariantCulture, "{0}|{1}|{2}|{3}|{4}", target?.Name ?? "AKASS Optimizer",
                 trim.Before, trim.After, before.Available, after.Available)
             : "unavailable";
+        Store.Log(action, detail);
+        return new ActivityRecord { Action = action, Detail = detail };
+    }
+
+    private ActivityRecord LogBatchMemory(string action, int? trimmed, Snapshot before, Snapshot after, string standby)
+    {
+        ulong? availableBefore = before.Total > 0 ? before.Available : (ulong?)null;
+        ulong? availableAfter = after.Total > 0 ? after.Available : (ulong?)null;
+        string detail = FormattableString.Invariant($"batch|{trimmed}|{availableBefore}|{availableAfter}|{standby}|{before.Standby}|{after.Standby}");
         Store.Log(action, detail);
         return new ActivityRecord { Action = action, Detail = detail };
     }

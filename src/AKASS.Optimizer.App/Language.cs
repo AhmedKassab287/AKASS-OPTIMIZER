@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
@@ -158,6 +159,7 @@ internal sealed class Language
         var parts = record.Detail.Split('|');
         if (record.Action is "AutoMemory" or "ManualMemory")
         {
+            if (parts.Length == 7 && parts[0] == "batch") return BatchMemoryDetail(parts);
             if (parts.Length == 5 && ulong.TryParse(parts[1], out var before) && ulong.TryParse(parts[2], out var after) &&
                 ulong.TryParse(parts[3], out var freeBefore) && ulong.TryParse(parts[4], out var freeAfter))
                 return string.Format(Pick("{0} · Working set {1} · Available RAM {2}",
@@ -177,6 +179,29 @@ internal sealed class Language
                 Technical(parts[0]), Technical(Policy.Bytes(bytes)), Technical(parts[2]), Technical(parts[3])) +
                 (parts[4] == "1" ? " · " + Pick("Cancelled", "أُلغيت", "İptal edildi") : "");
         return record.Detail;
+    }
+
+    private string BatchMemoryDetail(string[] parts)
+    {
+        ulong? ReadBytes(int index) => ulong.TryParse(parts[index], NumberStyles.None, CultureInfo.InvariantCulture, out var bytes)
+            ? bytes : (ulong?)null;
+        var details = new List<string>();
+        if (int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out int count))
+        {
+            details.Add(count == 0
+                ? Pick("No eligible background processes were trimmed.", "لم تُخفّض ذاكرة أي عملية مؤهلة في الخلفية.", "Uygun arka plan işlemlerinin belleği azaltılmadı.")
+                : Pick($"Processes trimmed {Technical(count)}", $"العمليات التي خُفّضت ذاكرتها {Technical(count)}", $"Belleği azaltılan işlem {Technical(count)}"));
+        }
+        string? standby = parts[4] switch
+        {
+            "cleared" => Pick("Standby RAM", "الذاكرة الاحتياطية", "Bekleme belleği") + " " + MemoryChange(ReadBytes(5), ReadBytes(6)),
+            "cancelled" => Pick("Standby clearing cancelled.", "أُلغي تفريغ الذاكرة الاحتياطية.", "Bekleme belleğini boşaltma iptal edildi."),
+            "failed" => Pick("Windows could not clear standby RAM.", "تعذّر على Windows تفريغ الذاكرة الاحتياطية.", "Windows bekleme belleğini boşaltamadı."),
+            _ => null
+        };
+        if (standby != null) details.Add(standby);
+        details.Add(Pick("Available RAM", "الذاكرة المتاحة", "Kullanılabilir RAM") + " " + MemoryChange(ReadBytes(2), ReadBytes(3)));
+        return string.Join(" · ", details);
     }
 
     public string Progress(string raw)

@@ -69,9 +69,9 @@ internal sealed partial class MainWindow
             traySetting, background, notification, launch, advanced));
         body.Children.Add(Section(L("Automatic memory optimization", "تحسين الذاكرة التلقائي", "Otomatik bellek optimizasyonu"),
             autoMemory, Field(memoryLimitLabel, memoryLimit),
-            Intro(L("Waits for sustained memory pressure and two minutes of inactivity. Runs in the tray when background monitoring is enabled. Choose an optional app for this session on the Memory Optimizer page.",
-                "ينتظر استمرار ضغط الذاكرة ودقيقتين من عدم النشاط. يعمل في شريط النظام عند تفعيل المراقبة في الخلفية. يمكنك اختيار تطبيق لهذه الجلسة من صفحة إدارة الذاكرة.",
-                "Bellek baskısının sürmesini ve iki dakika hareketsizliği bekler. Arka plan izleme açıksa sistem tepsisinde çalışır. Bellek yönetimi sayfasından bu oturum için bir uygulama seçebilirsiniz."))));
+            Intro(L("After sustained memory pressure and two minutes of inactivity, trims eligible background processes. You can choose one app for the current session. Runs in the tray when background monitoring is enabled.",
+                "بعد استمرار ضغط الذاكرة ودقيقتين من الخمول، يخفّض ذاكرة العمليات المؤهلة في الخلفية. يمكنك اختيار تطبيق واحد للجلسة الحالية. يعمل في علبة النظام عند تفعيل المراقبة في الخلفية.",
+                "Sürekli bellek baskısı ve iki dakika hareketsizlikten sonra uygun arka plan işlemlerinin belleği azaltılır. Bu oturum için tek uygulama seçebilirsiniz. Arka plan izleme açıksa sistem tepsisinde çalışır."))));
         var group = Body();
         foreach (var item in safeDefaults) group.Children.Add(item.box);
         body.Children.Add(Section(L("Preselected cleanup categories", "فئات التنظيف المحددة مسبقاً", "Önceden seçilen temizlik kategorileri"),

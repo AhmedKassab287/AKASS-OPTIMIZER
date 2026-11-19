@@ -2,6 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
@@ -61,35 +62,47 @@ internal sealed partial class MainWindow
         return Section(L("Physical memory breakdown", "توزيع الذاكرة الفعلية", "Fiziksel bellek dağılımı"), bar, legend, summary);
     }
 
-    private Border MemoryTools()
+    private Border MemoryTools(TextBlock lastResult, Action refreshResult)
     {
-        var result = Muted("");
-        return Section(L("Manual memory tools", "أدوات الذاكرة اليدوية", "El ile bellek araçları"),
-            Muted(L("Clearing standby may slow the next launch. Heap compaction is limited to AKASS Optimizer.",
-                "قد يبطئ مسح الذاكرة الاحتياطية تشغيل التطبيقات التالية. ضغط الذاكرة المدارة يخص AKASS Optimizer فقط.",
-                "Bekleme listesini temizlemek sonraki açılışları yavaşlatabilir. Yığın sıkıştırması yalnızca AKASS Optimizer içindir.")),
-            Actions(ActionButton(L("Clear standby RAM", "مسح الذاكرة الاحتياطية", "Bekleme belleğini temizle"), async () =>
+        var free = Check(L("Free up RAM", "تحرير الذاكرة", "RAM boşalt"), true);
+        var standby = Check(L("Empty standby RAM", "تفريغ الذاكرة الاحتياطية", "Bekleme belleğini boşalt"));
+        var compactResult = Muted("");
+        var optimize = ActionButton(L("Optimize now", "تحسين الآن", "Şimdi optimize et"), async () =>
+        {
+            bool freeRam = free.IsChecked == true, emptyStandby = standby.IsChecked == true;
+            if (!freeRam && !emptyStandby)
             {
-                if (!Confirm(L("Clear the Windows standby cache? Administrator permission is required.",
-                    "مسح ذاكرة Windows الاحتياطية؟ يتطلب الإجراء صلاحية المسؤول.",
-                    "Windows bekleme önbelleği temizlensin mi? Yönetici izni gerekir."), true)) return;
-                var before = await Task.Run(() => model.Metrics.Sample(includeNetwork: false));
-                var outcome = await Run("Standby RAM", token => RepairService.RunAsync(RepairKind.ClearStandby, token), false);
-                var after = await Task.Run(() => model.Metrics.Sample(includeNetwork: false));
-                ShowText(result, outcome.ExitCode == 0 ? labelsStandby(before, after) : outcome.Output);
-                model.Store.Log("ManualMemoryTools", Akass.Optimizer.Language.PlainText(result.Text));
-                Status("");
-            }), ActionButton(L("Compact AKASS heap", "ضغط ذاكرة AKASS المدارة", "AKASS yığınını sıkıştır"), async () =>
-            {
-                var resultBytes = await Run("AKASS", token => Task.Run(MemoryMaintenance.CompactAppHeap, token), false);
-                ShowText(result, L("AKASS managed heap", "ذاكرة AKASS المدارة", "AKASS yönetilen yığını") + "  " +
-                    words.MemoryChange(resultBytes.Before, resultBytes.After));
-                model.Store.Log("ManualMemoryTools", Akass.Optimizer.Language.PlainText(result.Text));
-                Status("");
-            })), result);
+                Status(L("Select a memory operation first.", "اختر عملية واحدة لتحسين الذاكرة على الأقل.", "Önce bir bellek işlemi seçin."));
+                return;
+            }
+            if (emptyStandby && !Confirm(L("Empty the Windows standby cache? Windows requires administrator approval. Apps may take longer to reopen.",
+                "هل تريد تفريغ ذاكرة Windows الاحتياطية؟ يتطلب ذلك صلاحية المسؤول وقد تصبح إعادة فتح التطبيقات أبطأ.",
+                "Windows bekleme önbelleği boşaltılsın mı? Yönetici onayı gerekir. Uygulamaların yeniden açılması daha uzun sürebilir."), true)) return;
 
-        string labelsStandby(Snapshot before, Snapshot after) => L("Standby RAM", "الذاكرة الاحتياطية", "Bekleme belleği") + "  " +
-            words.MemoryChange(before.Standby, after.Standby);
+            await Run(L("Optimizing memory.", "جارٍ تحسين الذاكرة.", "Bellek optimize ediliyor."), async token =>
+            {
+                await model.OptimizeMemoryAsync(freeRam, emptyStandby, token);
+                return true;
+            }, false);
+            refreshResult();
+            Status("");
+        }, true);
+        AutomationProperties.SetAutomationId(free, "MemoryFreeRamOption");
+        AutomationProperties.SetAutomationId(standby, "MemoryStandbyOption");
+        AutomationProperties.SetAutomationId(optimize, "MemoryOptimizeNow");
+        return Section(L("Optimize memory", "تحسين الذاكرة", "Belleği optimize et"),
+            Muted(L("Free up RAM trims eligible idle background processes without closing apps. Emptying standby clears Windows’ reusable cache.",
+                "يحرّر خيار تحرير الذاكرة جزءاً من الذاكرة الفعلية للعمليات الخاملة في الخلفية دون إغلاق التطبيقات. ويفرّغ الخيار الثاني ذاكرة التخزين المؤقت القابلة لإعادة الاستخدام في Windows.",
+                "RAM boşaltma, uygulamaları kapatmadan uygun, boşta çalışan arka plan işlemlerinin belleğini azaltır. Bekleme belleğini boşaltma, Windows’un yeniden kullanılabilir önbelleğini temizler.")),
+            Actions(free, standby), Actions(optimize), lastResult,
+            Actions(ActionButton(L("Compact AKASS memory", "ضغط ذاكرة AKASS", "AKASS belleğini sıkıştır"), async () =>
+            {
+                var memory = await Run("AKASS", token => Task.Run(MemoryMaintenance.CompactAppHeap, token), false);
+                ShowText(compactResult, L("AKASS memory", "ذاكرة AKASS", "AKASS belleği") + "  " +
+                    words.MemoryChange(memory.Before, memory.After));
+                model.Store.Log("ManualMemoryTools", Akass.Optimizer.Language.PlainText(compactResult.Text));
+                Status("");
+            })), compactResult);
     }
 
     internal bool PendingElevatedRestart { get; private set; }

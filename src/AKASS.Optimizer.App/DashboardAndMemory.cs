@@ -172,23 +172,17 @@ internal sealed partial class MainWindow
                 ? L("Enabled", "مفعّل", "Etkin") + " · " + words.Technical(Size((ulong)model.Preferences.AutoMemoryLimitMiB * Policy.MiB))
                 : L("Disabled", "غير مفعّل", "Devre dışı");
             automatic += " · " + L("Target", "التطبيق المستهدف", "Hedef") + " " +
-                words.Technical(model.AutoMemoryTarget?.Name ?? "AKASS Optimizer");
+                (model.AutoMemoryTarget is { } target ? words.Technical(target.Name) :
+                    L("Eligible background processes", "العمليات المؤهلة في الخلفية", "Uygun arka plan işlemleri"));
             ShowText(autoStatus, automatic);
             ShowText(autoResult, model.LastMemoryOptimization is { } result
                 ? words.DateLabel(result.Time.ToLocalTime()) + " · " + words.HistoryDetail(result) : "");
         }
 
-        var optimize = ActionButton(L("Optimize AKASS now", "حسّن ذاكرة AKASS الآن", "AKASS belleğini şimdi optimize et"), async () =>
-        {
-            await Run(L("Measuring and trimming AKASS memory.", "جارٍ قياس وتقليص ذاكرة AKASS.",
-                "AKASS belleği ölçülüyor ve küçültülüyor."), _ => model.OptimizeMemoryManually(), false);
-            UpdateAuto();
-            Status("");
-        }, true);
+        body.Children.Add(MemoryTools(autoResult, UpdateAuto));
         body.Children.Add(Section(L("Automatic memory optimization", "تحسين الذاكرة التلقائي", "Otomatik bellek optimizasyonu"),
-            autoStatus, autoResult, Actions(optimize, ActionButton(PageName(Page.Settings), () => Navigate(Page.Settings)))));
+            autoStatus, Actions(ActionButton(PageName(Page.Settings), () => Navigate(Page.Settings)))));
         UpdateAuto();
-        body.Children.Add(MemoryTools());
         body.Children.Add(Section(L("Physical memory history · %", "سجل الذاكرة الفعلية · %", "Fiziksel bellek geçmişi · %"), chart, analysis));
         body.Children.Add(ProcessesPanel(allowClose: true, onTargetChanged: UpdateAuto));
         var explanation = Intro(L("Working sets can include shared pages. The totals can overlap. Commit tracks allocated virtual memory that needs backing. A rise in available RAM alone does not measure responsiveness.",
@@ -315,9 +309,9 @@ internal sealed partial class MainWindow
             model.AutoMemoryTarget = null;
             onTargetChanged?.Invoke();
         });
-        clearTarget.ToolTip = L("Automatic optimization returns to managing the memory used by AKASS Optimizer itself.",
-            "بعد إزالة التطبيق المختار، يعود التحسين التلقائي إلى ذاكرة برنامج AKASS Optimizer نفسه.",
-            "Seçim kaldırılınca otomatik optimizasyon AKASS Optimizer'ın kendi belleğini yönetir.");
+        clearTarget.ToolTip = L("Automatic optimization returns to eligible background processes.",
+            "بعد إلغاء الاختيار، يعود التحسين التلقائي إلى العمليات المؤهلة في الخلفية.",
+            "Seçim kaldırılınca otomatik optimizasyon uygun arka plan işlemlerine döner.");
         autoTarget.IsEnabled = false;
         var trimSelected = ActionButton(L("Free selected app RAM", "تحرير ذاكرة التطبيق المحدد", "Seçili uygulama belleğini boşalt"), async () =>
         {

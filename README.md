@@ -28,7 +28,7 @@ Starting with 1.3.0, open **Settings → Updates** or **About** and select **Che
 | --- | --- |
 | Dashboard | View live CPU, RAM and storage metrics, review a health score and preview suggested cleanup. |
 | Smart Cleaner | Scan eligible temporary files, browser caches and thumbnails. Review categories before cleaning. The Recycle Bin has a separate confirmation. |
-| Memory Optimizer | Inspect working sets, RAM pressure and commit. Enable automatic optimization in Settings to act after sustained pressure and inactivity. The default target is AKASS itself. You can approve one eligible background app for the current session. |
+| Memory Optimizer | Inspect RAM pressure and commit, free RAM from eligible background processes, and optionally clear the Windows standby cache. Automatic RAM optimization is available in Settings. |
 | Startup Manager | Review Run registrations and Startup folders. Back up or restore eligible current-user shortcuts. |
 | System Monitor | Follow CPU and memory history, disk and network rates, and running processes. |
 | Large Files | Scan local folders or drives, filter by extension and size, and export results as CSV. |

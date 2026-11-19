@@ -387,22 +387,20 @@ public sealed class ProcessAnalyzer
     }
 
     private static bool TryOpenApp(int pid, long? started, string? expectedImage, bool terminate,
-        out string image, out SafeFileHandle? verified)
+        out string image, out SafeFileHandle? verified, uint extraAccess = 0)
     {
         image = "";
         verified = null;
         using var self = Process.GetCurrentProcess();
         if (pid <= 0 || pid == self.Id || !ProcessIdToSessionId((uint)pid, out uint session) || session != self.SessionId) return false;
-        var handle = OpenProcess(0x101000u | (terminate ? 1u : 0u), false, pid);
+        var handle = OpenProcess(0x101000u | (terminate ? 1u : 0u) | extraAccess, false, pid);
         try
         {
             if (handle.IsInvalid || !IsProcessCritical(handle, out bool critical) || critical ||
                 started.HasValue && (!GetProcessTimes(handle, out long created, out _, out _, out _) ||
                     DateTime.FromFileTimeUtc(created).Ticks != started)) return false;
-            var path = new StringBuilder(1024);
-            uint length = (uint)path.Capacity;
-            if (!QueryFullProcessImageName(handle, 0, path, ref length)) return false;
-            image = path.ToString();
+            image = ProcessImage(handle);
+            if (image.Length == 0) return false;
             if ((expectedImage != null && !string.Equals(image, expectedImage, StringComparison.OrdinalIgnoreCase)) ||
                 !IsSupportedAppImage(image, includeLocalApps: true) || !OpenProcessToken(handle, 8, out var token)) return false;
             using (token)
@@ -415,6 +413,76 @@ public sealed class ProcessAnalyzer
         }
         finally { if (verified == null) handle.Dispose(); }
     }
+
+    private static string ProcessImage(SafeFileHandle handle)
+    {
+        var path = new StringBuilder(1024);
+        uint length = (uint)path.Capacity;
+        return !handle.IsInvalid && QueryFullProcessImageName(handle, 0, path, ref length) ? path.ToString() : "";
+    }
+
+    public static int TrimBackgroundWorkingSets(IReadOnlyList<ProcessRow> processes, bool requireUserIdle)
+    {
+        const int maximumTargets = 24;
+        const ulong minimumWorkingSet = 16 * Policy.MiB;
+        const uint trimAccess = 0x0100 | 0x0010;
+        var candidates = new List<(int Pid, string Image, SafeFileHandle Handle, long Cpu)>();
+        try
+        {
+            var foreground = ForegroundApp();
+            foreach (var row in processes.Where(x => x.Started > 0 && x.Working >= minimumWorkingSet).OrderByDescending(x => x.Working))
+            {
+                if (candidates.Count >= maximumTargets || foreground.Pid == 0) break;
+                SafeFileHandle? handle = null;
+                try
+                {
+                    if (row.Pid == foreground.Pid || !TryOpenApp(row.Pid, row.Started, null, false,
+                        out var image, out handle, trimAccess) || !IsBackground(row.Pid, image, foreground) ||
+                        !TryCpuTime(handle!, out long cpu)) continue;
+                    candidates.Add((row.Pid, image, handle!, cpu));
+                    handle = null; // The batch now owns this verified handle.
+                }
+                catch (Exception error) when (FileSafety.ExpectedFailure(error)) { }
+                finally { handle?.Dispose(); }
+            }
+
+            if (candidates.Count == 0) return 0;
+            System.Threading.Thread.Sleep(450);
+            int trimmed = 0;
+            foreach (var candidate in candidates)
+            {
+                if (requireUserIdle && (SystemMetrics.UserIdle() is not { } idle || idle < AutoMemoryPolicy.IdlePeriod)) break;
+                if (!IsBackground(candidate.Pid, candidate.Image, ForegroundApp()) ||
+                    !TryCpuTime(candidate.Handle, out long cpu) || cpu - candidate.Cpu > TimeSpan.FromMilliseconds(10).Ticks ||
+                    WaitForSingleObject(candidate.Handle, 0) != 0x102) continue;
+                if (EmptyWorkingSet(candidate.Handle)) trimmed++;
+            }
+            return trimmed;
+        }
+        finally
+        {
+            foreach (var candidate in candidates) candidate.Handle.Dispose();
+        }
+    }
+
+    private static bool TryCpuTime(SafeFileHandle handle, out long ticks)
+    {
+        bool available = GetProcessTimes(handle, out _, out _, out long kernel, out long user);
+        ticks = kernel + user;
+        return available;
+    }
+
+    private static (uint Pid, string Image) ForegroundApp()
+    {
+        IntPtr window = GetForegroundWindow();
+        if (window == IntPtr.Zero || GetWindowThreadProcessId(window, out uint pid) == 0 || pid == 0)
+            return (0, "");
+        using var handle = OpenProcess(0x1000, false, (int)pid);
+        return (pid, ProcessImage(handle));
+    }
+
+    private static bool IsBackground(int pid, string image, (uint Pid, string Image) foreground) =>
+        foreground.Pid != 0 && pid != foreground.Pid && !string.Equals(image, foreground.Image, StringComparison.OrdinalIgnoreCase);
 
     public static (ulong Before, ulong After)? TrimWorkingSet(ProcessRow? target = null, bool requireUserIdle = true)
     {

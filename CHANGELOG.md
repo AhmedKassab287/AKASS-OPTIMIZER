@@ -1,5 +1,10 @@
 # Release notes
 
+## 1.4.0
+
+- Memory Optimizer adds a single Optimize now button for Free up RAM and optional Empty standby RAM. The result shows processed background processes and memory before and after.
+- Automatic memory optimization can trim eligible idle background processes after sustained memory pressure and user inactivity. Standby clearing remains a manual action that requires administrator approval.
+
 ## 1.3.3
 
 - Settings shows an update indicator in the sidebar when a newer stable version is available.
