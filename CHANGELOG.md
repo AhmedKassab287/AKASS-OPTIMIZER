@@ -1,5 +1,11 @@
 # Release notes
 
+## 1.3.1
+
+- The overlay shows CPU usage when the temperature sensor cannot be read. System Monitor explains when the PawnIO driver or Windows permissions are needed and offers the relevant action.
+- FPS uses displayed frames when available and falls back to frames submitted by the game. System Monitor reports capture permission errors and offers a restart as administrator.
+- End application verifies that the selected app exited and offers a separately confirmed force stop for the app and its same-binary background processes. Automatic RAM optimization now has a clearly labeled option to remove the selected app.
+
 ## 1.3.0
 
 - Settings and About check GitHub Releases for new stable versions. The app checks automatically while it runs and verifies the Windows installer against GitHub's SHA-256 digest before launching it with your approval.

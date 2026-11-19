@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -164,8 +165,15 @@ internal static class Checks
                 frames.Add("Game.exe,100,0x1,100,16", now.AddMilliseconds(16));
                 frames.Add("Game.exe,100,0x1,100,NA", now.AddMilliseconds(32));
                 frames.Add("Game.exe,100,0x2,100,3", now.AddMilliseconds(32));
-                Equal<double?>(62.5, frames.Read(now.AddMilliseconds(40)));
-                Equal<double?>(null, frames.Read(now.AddSeconds(3)));
+                Equal<double?>(62.5, frames.Read(now.AddMilliseconds(40), out bool submitted));
+                True(!submitted);
+                frames.Add("Game.exe,100,0x1,10,NA", now.AddMilliseconds(2540));
+                frames.Add("Game.exe,100,0x1,10,NA", now.AddMilliseconds(2556));
+                Equal<double?>(100, frames.Read(now.AddMilliseconds(2560), out submitted));
+                True(submitted);
+                Equal<double?>(null, frames.Read(now.AddSeconds(6), out _));
+                Equal(FrameCaptureStatus.PermissionDenied, FrameMonitor.ReadDiagnostic(FrameCaptureStatus.WaitingForFrames,
+                    "error: failed to start trace session: access denied."));
             });
             Test("manual Temp cleanup previews old files beyond the scheduled extension filter", () =>
             {
@@ -190,8 +198,47 @@ internal static class Checks
                 var rows = sampler.Sample();
                 using var self = System.Diagnostics.Process.GetCurrentProcess();
                 var row = rows.Single(x => x.Pid == self.Id);
-                True(row.Working > 0 && row.Private > 0 && !row.CanClose);
-                Equal(false, ProcessAnalyzer.CloseGracefully(new ProcessRow { Pid = self.Id, Started = row.Started - 1 }));
+                True(row.Working > 0 && row.Private > 0 && !row.CanClose && !row.CanEnd);
+                Equal(AppStopResult.Unavailable, ProcessAnalyzer.StopApplication(row, force: true).Result);
+            });
+            Test("ending an owned app closes the selected executable and leaves an unrelated path alive", () =>
+            {
+                var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                if (HardwareSensors.IsElevated() || !Policy.Inside(local, root))
+                {
+                    Skip("This check needs an unelevated session with writable local app data.");
+                    return;
+                }
+                string name = "akass-process-" + Guid.NewGuid().ToString("N") + ".exe";
+                string first = Path.Combine(Under(root, "end-app"), name);
+                string other = Path.Combine(Under(root, "end-other"), name);
+                File.Copy(Path.Combine(Environment.SystemDirectory, "cmd.exe"), first);
+                File.Copy(first, other);
+
+                Process Start(string file) => Process.Start(new ProcessStartInfo(file, "/d /q")
+                {
+                    UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, CreateNoWindow = true
+                }) ?? throw new InvalidOperationException("Could not start the app fixture.");
+
+                using var target = Start(first);
+                using var sibling = Start(first);
+                using var unrelated = Start(other);
+                try
+                {
+                    var row = new ProcessRow { Pid = target.Id, Name = target.ProcessName, Started = target.StartTime.ToUniversalTime().Ticks };
+                    Equal(AppStopResult.Unavailable, ProcessAnalyzer.StopApplication(new ProcessRow { Pid = row.Pid, Started = row.Started - 1 }, true).Result);
+                    Equal(AppStopResult.StillRunning, ProcessAnalyzer.StopApplication(row, force: false).Result);
+                    Equal(AppStopResult.Exited, ProcessAnalyzer.StopApplication(row, force: true).Result);
+                    True(target.WaitForExit(1000) && sibling.WaitForExit(1000) && !unrelated.HasExited);
+                }
+                finally
+                {
+                    foreach (var process in new[] { target, sibling, unrelated })
+                    {
+                        if (!process.HasExited) process.StandardInput.WriteLine("exit");
+                        if (!process.WaitForExit(1000)) process.Kill();
+                    }
+                }
             });
             Test("battery capacity XML parser and active power scheme", () =>
             {

@@ -7,6 +7,8 @@ using System.Linq;
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
+using System.Text;
+using System.Threading;
 using Microsoft.Win32;
 using Microsoft.Win32.SafeHandles;
 
@@ -25,10 +27,12 @@ public sealed class Snapshot
     public ulong? Cached => Standby + Modified;
     public ulong? HardwareReserved => Installed >= Total && Total > 0 ? Installed - Total : null;
     public double? CpuTemperature { get; set; }
+    public CpuSensorStatus CpuSensorStatus { get; set; }
     public double? GpuTemperature { get; set; }
     public string GpuAdapter { get; set; } = "";
     public double? FramesPerSecond { get; set; }
     public string FrameApp { get; set; } = "";
+    public FrameCaptureStatus FrameCaptureStatus { get; set; }
     public ulong? Commit { get; set; }
     public ulong? CommitLimit { get; set; }
     public double? CommitRatio => CommitLimit > 0 ? Commit / (double?)CommitLimit : null;
@@ -266,7 +270,10 @@ public sealed class ProcessRow
     public ulong Private { get; set; }
     public double? Cpu { get; set; }
     public bool CanClose { get; set; }
+    public bool CanEnd { get; set; }
 }
+
+public enum AppStopResult { Exited, StillRunning, Unavailable }
 
 public sealed class ProcessAnalyzer
 {
@@ -311,7 +318,9 @@ public sealed class ProcessAnalyzer
                         row.Cpu = Math.Min(100, 100 * (cpu - past.Cpu) * Stopwatch.Frequency /
                             ((clock - past.Clock) * (double)Environment.ProcessorCount));
                     next[key] = (cpu, clock);
-                    row.CanClose = Eligible(process);
+                    row.CanEnd = TryOpenApp(process.Id, row.Started, null, false, out _, out var endHandle);
+                    endHandle?.Dispose();
+                    row.CanClose = row.CanEnd && process.MainWindowHandle != IntPtr.Zero;
                 }
                 catch (Exception e) when (e is Win32Exception || e is InvalidOperationException ||
                                           e is NotSupportedException || e is UnauthorizedAccessException) { }
@@ -321,15 +330,90 @@ public sealed class ProcessAnalyzer
         return rows.OrderByDescending(x => x.Working).ToList();
     }
 
-    public static bool CloseGracefully(ProcessRow target)
+    public static (AppStopResult Result, ProcessRow? Remaining) StopApplication(ProcessRow target, bool force)
     {
         try
         {
-            using var process = Process.GetProcessById(target.Pid);
-            return process.StartTime.ToUniversalTime().Ticks == target.Started && Eligible(process) && process.CloseMainWindow();
+            if (!TryOpenApp(target.Pid, target.Started, null, force, out var image, out var selected))
+                return (AppStopResult.Unavailable, null);
+            using (selected)
+            {
+                if (!force)
+                {
+                    EnumWindows((window, _) =>
+                    {
+                        if (GetWindowThreadProcessId(window, out uint pid) != 0 && pid == (uint)target.Pid && IsWindowVisible(window))
+                            PostMessage(window, 0x0010, IntPtr.Zero, IntPtr.Zero);
+                        return true;
+                    }, IntPtr.Zero);
+                    WaitForSingleObject(selected!, 2500);
+                }
+
+                if (force)
+                {
+                    if (WaitForSingleObject(selected!, 0) != 0) TerminateProcess(selected!, 1);
+                    StopMatchingProcesses(image, target.Name, force: true);
+                }
+                var remaining = StopMatchingProcesses(image, target.Name, force: false);
+                if (WaitForSingleObject(selected!, force ? 500u : 0u) != 0) remaining ??= target;
+                return remaining == null ? (AppStopResult.Exited, null) : (AppStopResult.StillRunning, remaining);
+            }
         }
-        catch (Exception e) when (e is Win32Exception || e is ArgumentException ||
-                                  e is InvalidOperationException || e is NotSupportedException) { return false; }
+        catch (Exception error) when (error is Win32Exception or ArgumentException or InvalidOperationException or UnauthorizedAccessException)
+        {
+            return (AppStopResult.Unavailable, null);
+        }
+    }
+
+    // Keep other accounts and binaries out of scope even if their process name matches.
+    private static ProcessRow? StopMatchingProcesses(string image, string name, bool force)
+    {
+        ProcessRow? running = null;
+        foreach (var sibling in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(image)))
+        {
+            using (sibling)
+            {
+                if (!TryOpenApp(sibling.Id, null, image, force, out _, out var handle)) continue;
+                using (handle)
+                {
+                    if (WaitForSingleObject(handle!, 0) == 0) continue;
+                    if (force && TerminateProcess(handle!, 1) && WaitForSingleObject(handle!, 300) == 0) continue;
+                    if (GetProcessTimes(handle!, out long created, out _, out _, out _))
+                        running ??= new ProcessRow { Pid = sibling.Id, Name = name, Started = DateTime.FromFileTimeUtc(created).Ticks };
+                }
+            }
+        }
+        return running;
+    }
+
+    private static bool TryOpenApp(int pid, long? started, string? expectedImage, bool terminate,
+        out string image, out SafeFileHandle? verified)
+    {
+        image = "";
+        verified = null;
+        using var self = Process.GetCurrentProcess();
+        if (pid <= 0 || pid == self.Id || !ProcessIdToSessionId((uint)pid, out uint session) || session != self.SessionId) return false;
+        var handle = OpenProcess(0x101000u | (terminate ? 1u : 0u), false, pid);
+        try
+        {
+            if (handle.IsInvalid || !IsProcessCritical(handle, out bool critical) || critical ||
+                started.HasValue && (!GetProcessTimes(handle, out long created, out _, out _, out _) ||
+                    DateTime.FromFileTimeUtc(created).Ticks != started)) return false;
+            var path = new StringBuilder(1024);
+            uint length = (uint)path.Capacity;
+            if (!QueryFullProcessImageName(handle, 0, path, ref length)) return false;
+            image = path.ToString();
+            if ((expectedImage != null && !string.Equals(image, expectedImage, StringComparison.OrdinalIgnoreCase)) ||
+                !IsSupportedAppImage(image, includeLocalApps: true) || !OpenProcessToken(handle, 8, out var token)) return false;
+            using (token)
+            using (var owner = new WindowsIdentity(token.DangerousGetHandle()))
+            using (var user = WindowsIdentity.GetCurrent())
+                if (owner.User == null || !owner.User.Equals(user.User) ||
+                    !GetTokenInformation(token, 20, out uint elevated, 4, out _) || elevated != 0) return false;
+            verified = handle;
+            return true;
+        }
+        finally { if (verified == null) handle.Dispose(); }
     }
 
     public static (ulong Before, ulong After)? TrimWorkingSet(ProcessRow? target = null, bool requireUserIdle = true)
@@ -375,22 +459,27 @@ public sealed class ProcessAnalyzer
 
     private static bool Eligible(Process process)
     {
-        if (process.MainWindowHandle == IntPtr.Zero || IsWindowsShell(process, out var executable)) return false;
-        var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-        var programs86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
-        var userPrograms = Path.Combine(local, "Programs");
-        if (!Policy.Inside(programFiles, executable) && !Policy.Inside(programs86, executable) &&
-            !Policy.Inside(userPrograms, executable)) return false;
-        if (executable.IndexOf("WindowsApps", StringComparison.OrdinalIgnoreCase) >= 0 ||
-            executable.IndexOf("security", StringComparison.OrdinalIgnoreCase) >= 0 ||
-            executable.IndexOf("antivirus", StringComparison.OrdinalIgnoreCase) >= 0) return false;
+        if (process.MainWindowHandle == IntPtr.Zero || IsWindowsShell(process, out var executable) ||
+            !IsSupportedAppImage(executable)) return false;
         using var handle = OpenProcess(0x1000, false, process.Id);
         if (handle.IsInvalid || !OpenProcessToken(handle, 8, out var token)) return false;
         using (token)
         using (var owner = new WindowsIdentity(token.DangerousGetHandle()))
         using (var user = WindowsIdentity.GetCurrent())
             return owner.User != null && owner.User.Equals(user.User);
+    }
+
+    private static bool IsSupportedAppImage(string executable, bool includeLocalApps = false)
+    {
+        var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        var programs86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+        var userPrograms = includeLocalApps ? local : Path.Combine(local, "Programs");
+        if (!Policy.Inside(programFiles, executable) && !Policy.Inside(programs86, executable) &&
+            !Policy.Inside(userPrograms, executable)) return false;
+        return !(executable.IndexOf("WindowsApps", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            executable.IndexOf("security", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            executable.IndexOf("antivirus", StringComparison.OrdinalIgnoreCase) >= 0);
     }
 
     private static bool IsWindowsShell(Process process, out string executable)
@@ -433,4 +522,13 @@ public sealed class ProcessAnalyzer
         out long created, out long exited, out long kernel, out long user);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
+    [DllImport("kernel32.dll")] private static extern bool ProcessIdToSessionId(uint process, out uint session);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool QueryFullProcessImageName(SafeFileHandle process, uint flags, StringBuilder image, ref uint length);
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern uint WaitForSingleObject(SafeFileHandle handle, uint milliseconds);
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern bool TerminateProcess(SafeFileHandle process, uint code);
+    private delegate bool WindowCallback(IntPtr window, IntPtr parameter);
+    [DllImport("user32.dll")] private static extern bool EnumWindows(WindowCallback callback, IntPtr parameter);
+    [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
 }

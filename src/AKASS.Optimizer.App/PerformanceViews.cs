@@ -92,27 +92,65 @@ internal sealed partial class MainWindow
             Size(before.Standby) + " → " + Size(after.Standby);
     }
 
+    internal bool PendingElevatedRestart { get; private set; }
+
     private Border PerformancePanel(out Action<Snapshot> update)
     {
         var cards = new UniformGrid { Columns = 3 };
         var cpu = Metric(cards, L("CPU temperature", "حرارة المعالج", "İşlemci sıcaklığı"), theme.Blue);
         var gpu = Metric(cards, L("GPU temperature", "حرارة كرت الشاشة", "Ekran kartı sıcaklığı"), theme.Accent);
         var fps = Metric(cards, "FPS", theme.Accent);
+        var driver = ActionButton(L("Open CPU temperature driver page", "فتح صفحة تعريف حرارة المعالج",
+            "İşlemci sıcaklık sürücüsünün sayfasını aç"), () => OpenShell(HardwareSensors.DriverPage));
+        var restart = ActionButton(L("Restart as administrator", "إعادة التشغيل كمسؤول",
+            "Yönetici olarak yeniden başlat"), RestartForPerformance);
+        driver.Visibility = restart.Visibility = Visibility.Collapsed;
+        bool elevated = HardwareSensors.IsElevated();
         update = data =>
         {
             cpu.Value.Text = Degrees(data.CpuTemperature);
+            cpu.Caption.Text = data.CpuSensorStatus switch
+            {
+                CpuSensorStatus.DriverMissing => L("CPU temperature needs the PawnIO driver. Restart AKASS after installing it.",
+                    "حرارة المعالج تتطلب تعريف PawnIO. أعد تشغيل AKASS بعد تثبيته.", "İşlemci sıcaklığı PawnIO sürücüsünü gerektirir. Kurulumdan sonra AKASS'ı yeniden başlatın."),
+                CpuSensorStatus.AccessRequired => L("Try running as administrator to access the CPU sensor.",
+                    "جرّب تشغيل البرنامج كمسؤول للوصول إلى حساس حرارة المعالج.", "İşlemci sensörüne erişmek için yönetici olarak çalıştırmayı deneyin."),
+                CpuSensorStatus.Reading => SystemMetrics.CpuName,
+                _ => L("CPU temperature sensor unavailable.", "قراءة حساس حرارة المعالج غير متوفرة.", "İşlemci sıcaklık sensörü kullanılamıyor.")
+            };
             gpu.Value.Text = Degrees(data.GpuTemperature);
             gpu.Caption.Text = data.GpuAdapter;
             fps.Value.Text = FramesPerSecond(data.FramesPerSecond);
-            fps.Caption.Text = data.FrameApp;
+            fps.Caption.Text = data.FrameCaptureStatus switch
+            {
+                FrameCaptureStatus.PermissionDenied => L("Windows blocked FPS capture. Run as administrator.",
+                    "منع Windows قياس الـFPS. شغّل البرنامج كمسؤول.", "Windows FPS ölçümünü engelledi. Yönetici olarak çalıştırın."),
+                FrameCaptureStatus.Unavailable => L("FPS capture tool is missing.", "أداة قياس الـFPS غير موجودة.", "FPS ölçüm aracı eksik."),
+                FrameCaptureStatus.Failed => L("FPS capture failed. Reopen the overlay to retry.", "تعذّر قياس الـFPS. أعد فتح العرض للمحاولة مجدداً.", "FPS ölçümü başarısız oldu. Tekrar denemek için ekran üstü göstergeyi açın."),
+                FrameCaptureStatus.AppSubmitted => data.FrameApp + " · " + L("Game-submitted frames", "الإطارات التي ترسلها اللعبة", "Oyunun gönderdiği kareler"),
+                FrameCaptureStatus.Displayed => data.FrameApp + " · " + L("Displayed frames", "الإطارات المعروضة", "Gösterilen kareler"),
+                _ => L("Waiting for frames from the active game.", "بانتظار إطارات اللعبة النشطة.", "Etkin oyundan kare bekleniyor.")
+            };
+            driver.Visibility = data.CpuSensorStatus == CpuSensorStatus.DriverMissing ? Visibility.Visible : Visibility.Collapsed;
+            restart.Visibility = !elevated && (data.FrameCaptureStatus == FrameCaptureStatus.PermissionDenied ||
+                data.CpuSensorStatus == CpuSensorStatus.AccessRequired) ? Visibility.Visible : Visibility.Collapsed;
         };
-        return Section(L("Game and hardware telemetry", "إحصائيات الألعاب والعتاد", "Oyun ve donanım telemetrisi"), cards,
-            Muted(L("FPS tracks displayed frames of the foreground app. Dashes indicate that a sensor or frame data is unavailable.",
-                "يعرض FPS الإطارات المعروضة من التطبيق النشط. تشير الشرطة إلى عدم توفر المستشعر أو بيانات الإطارات.",
-                "FPS, öndeki uygulamanın ekranda gösterilen karelerini ölçer. Çizgi, sensör veya kare verisinin bulunmadığını belirtir.")),
-            Actions(ActionButton(L("Toggle overlay", "عرض أو إخفاء الإحصائيات فوق الشاشة", "Ekran üstü göstergeleri aç/kapat"), ToggleOverlay)),
+        return Section(L("Game and hardware telemetry", "قياسات أداء الألعاب والجهاز", "Oyun ve donanım ölçümleri"), cards,
+            Actions(ActionButton(L("Toggle overlay", "إظهار أو إخفاء القياسات فوق الشاشة", "Ekran üstü göstergeleri aç/kapat"), ToggleOverlay), driver, restart),
             Muted(hotkeyRegistered ? OverlayKeys : L("The global shortcut is unavailable. Use the button.",
-                "الاختصار العام غير متاح. استخدم الزر.", "Genel kısayol kullanılamıyor. Düğmeyi kullanın.")));
+                "الاختصار غير متاح. استخدم الزر.", "Genel kısayol kullanılamıyor. Düğmeyi kullanın.")));
+    }
+
+    private void RestartForPerformance()
+    {
+        if (HardwareSensors.IsElevated() || model.Busy ||
+            !Confirm(L("Restart AKASS Optimizer as administrator to allow performance monitoring?",
+                "هل تريد إعادة تشغيل AKASS Optimizer كمسؤول لإتاحة قياس الأداء؟",
+                "Performans ölçümüne izin vermek için AKASS Optimizer yönetici olarak yeniden başlatılsın mı?"))) return;
+        PendingElevatedRestart = true;
+        exiting = true;
+        Close();
+        if (!exiting) PendingElevatedRestart = false;
     }
 
     private static string Degrees(double? value) => value.HasValue ? value.Value.ToString("0") + " °C" : "—";
@@ -170,8 +208,10 @@ internal sealed partial class MainWindow
     {
         if (overlay == null || overlayReadout == null) return;
         var data = model.Current;
-        overlayReadout.Text = "CPU  " + Degrees(data?.CpuTemperature) + "     GPU  " + Degrees(data?.GpuTemperature) +
-            "     FPS  " + FramesPerSecond(data?.FramesPerSecond);
+        string processor = data?.CpuTemperature is { } temperature ? Degrees(temperature) : Percent(data?.Cpu);
+        string fps = data?.FrameCaptureStatus == FrameCaptureStatus.PermissionDenied
+            ? L("Permission needed", "تحتاج صلاحية", "İzin gerekli") : FramesPerSecond(data?.FramesPerSecond);
+        overlayReadout.Text = "CPU  " + processor + "     GPU  " + Degrees(data?.GpuTemperature) + "     FPS  " + fps;
         IntPtr handle = new WindowInteropHelper(overlay).Handle;
         if (handle == IntPtr.Zero || !GetWindowRect(handle, out var size)) return;
         var screen = Forms.Screen.FromHandle(FrameMonitor.ForegroundWindow).WorkingArea;

@@ -62,6 +62,14 @@ internal sealed class Language
 
     public string HistoryDetail(ActivityRecord record)
     {
+        if (record.Action == "CloseApp") return record.Detail switch
+        {
+            "Exited" => Pick("Application stopped.", "تم إيقاف التطبيق.", "Uygulama sonlandırıldı."),
+            "StillRunning" => Pick("Application is still running.", "ما زال التطبيق يعمل.", "Uygulama hâlâ çalışıyor."),
+            "Unavailable" or "WM_CLOSE unavailable" => Pick("The application could not be closed.", "تعذّر إغلاق التطبيق.", "Uygulama kapatılamadı."),
+            "WM_CLOSE sent" => Pick("Close request sent.", "تم إرسال طلب الإغلاق.", "Kapatma isteği gönderildi."),
+            _ => record.Detail
+        };
         var parts = record.Detail.Split('|');
         if (record.Action is "AutoMemory" or "ManualMemory")
         {

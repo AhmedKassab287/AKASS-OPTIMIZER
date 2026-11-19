@@ -10,6 +10,8 @@ using System.Threading.Tasks;
 
 namespace Akass.Optimizer;
 
+public enum FrameCaptureStatus { Unavailable, WaitingForFrames, PermissionDenied, Failed, Displayed, AppSubmitted }
+
 public sealed class FrameMonitor : IDisposable
 {
     private readonly string executable = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tools", "PresentMon", "PresentMon.exe");
@@ -20,15 +22,16 @@ public sealed class FrameMonitor : IDisposable
     private int target;
     private DateTime retryAfter;
     private FrameCsv frames = new FrameCsv();
+    private FrameCaptureStatus status;
     private bool disposed;
 
     public bool IsAvailable => File.Exists(executable);
 
-    public (double? Fps, string App) Read()
+    public (double? Fps, string App, FrameCaptureStatus Status) Read()
     {
         lock (gate)
         {
-            if (disposed || !IsAvailable) return (null, "");
+            if (disposed || !IsAvailable) return (null, "", FrameCaptureStatus.Unavailable);
             GetWindowThreadProcessId(ForegroundWindow, out var pid);
             if (pid > 0 && pid != ownPid && pid != target)
             {
@@ -36,13 +39,14 @@ public sealed class FrameMonitor : IDisposable
                 target = (int)pid;
                 retryAfter = DateTime.MinValue;
             }
-            if (target == 0) return (null, "");
-            if ((capture == null || capture.HasExited) && DateTime.UtcNow >= retryAfter)
+            if (target == 0) return (null, "", FrameCaptureStatus.WaitingForFrames);
+            if ((capture == null || capture.HasExited) && DateTime.UtcNow >= retryAfter && status != FrameCaptureStatus.PermissionDenied)
             {
                 StopCore();
                 StartCapture();
             }
-            return (frames.Read(DateTime.UtcNow), app);
+            double? value = frames.Read(DateTime.UtcNow, out bool submitted);
+            return (value, app, value.HasValue ? (submitted ? FrameCaptureStatus.AppSubmitted : FrameCaptureStatus.Displayed) : status);
         }
     }
 
@@ -52,6 +56,7 @@ public sealed class FrameMonitor : IDisposable
         {
             StopCore();
             target = 0;
+            status = FrameCaptureStatus.WaitingForFrames;
         }
     }
 
@@ -63,15 +68,21 @@ public sealed class FrameMonitor : IDisposable
             using var process = Process.GetProcessById(target);
             app = process.ProcessName;
             session = "AKASS-" + Guid.NewGuid().ToString("N");
+            status = FrameCaptureStatus.WaitingForFrames;
             capture = new Process { StartInfo = StartInfo("--process_id " + target.ToString(CultureInfo.InvariantCulture) +
                 " --session_name " + session +
-                " --output_stdout --no_console_stats --v1_metrics --no_track_input --no_track_gpu --terminate_on_proc_exit --timed 45 --terminate_after_timed") };
+                " --output_stdout --no_console_stats --v1_metrics --no_track_input --no_track_gpu --terminate_on_proc_exit --timed 120 --terminate_after_timed") };
             capture.OutputDataReceived += (sender, e) =>
             {
                 lock (gate)
                     if (ReferenceEquals(sender, capture) && e.Data != null) frames.Add(e.Data, DateTime.UtcNow);
             };
-            capture.ErrorDataReceived += (_, _) => { };
+            capture.ErrorDataReceived += (sender, e) =>
+            {
+                lock (gate)
+                    if (ReferenceEquals(sender, capture) && e.Data != null)
+                        status = ReadDiagnostic(status, e.Data);
+            };
             if (!capture.Start()) { StopCore(); return; }
             capture.BeginOutputReadLine();
             capture.BeginErrorReadLine();
@@ -79,7 +90,18 @@ public sealed class FrameMonitor : IDisposable
         catch (Exception error) when (error is Win32Exception or ArgumentException or InvalidOperationException or IOException)
         {
             StopCore();
+            status = error is Win32Exception { NativeErrorCode: 5 or 740 }
+                ? FrameCaptureStatus.PermissionDenied : FrameCaptureStatus.Failed;
         }
+    }
+
+    internal static FrameCaptureStatus ReadDiagnostic(FrameCaptureStatus current, string message)
+    {
+        if (message.IndexOf("access denied", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            message.IndexOf("Performance Log Users", StringComparison.OrdinalIgnoreCase) >= 0)
+            return FrameCaptureStatus.PermissionDenied;
+        return current != FrameCaptureStatus.PermissionDenied && message.StartsWith("error:", StringComparison.OrdinalIgnoreCase)
+            ? FrameCaptureStatus.Failed : current;
     }
 
     private ProcessStartInfo StartInfo(string arguments) => new ProcessStartInfo
@@ -129,9 +151,9 @@ public sealed class FrameMonitor : IDisposable
 
 internal sealed class FrameCsv
 {
-    private readonly Dictionary<string, Queue<(DateTime Time, double Duration)>> samples =
-        new Dictionary<string, Queue<(DateTime, double)>>(StringComparer.Ordinal);
-    private int chainColumn = -1, durationColumn = -1;
+    private readonly Dictionary<string, Queue<(DateTime Time, double? Displayed, double? Submitted)>> samples =
+        new Dictionary<string, Queue<(DateTime, double?, double?)>>(StringComparer.Ordinal);
+    private int chainColumn = -1, displayedColumn = -1, submittedColumn = -1;
 
     public void Add(string row, DateTime now)
     {
@@ -147,24 +169,29 @@ internal sealed class FrameCsv
         if (cells.Length > 1 && cells[0].TrimStart('\uFEFF') == "Application")
         {
             chainColumn = Array.FindIndex(cells, cell => cell.Equals("SwapChainAddress", StringComparison.OrdinalIgnoreCase));
-            durationColumn = Array.FindIndex(cells, cell => cell.Equals("MsBetweenDisplayChange", StringComparison.OrdinalIgnoreCase));
+            displayedColumn = Array.FindIndex(cells, cell => cell.Equals("MsBetweenDisplayChange", StringComparison.OrdinalIgnoreCase));
+            submittedColumn = Array.FindIndex(cells, cell => cell.Equals("MsBetweenPresents", StringComparison.OrdinalIgnoreCase));
             return;
         }
-        if (chainColumn < 0 || durationColumn < 0 || cells.Length <= Math.Max(chainColumn, durationColumn) ||
-            !double.TryParse(cells[durationColumn], NumberStyles.Float, CultureInfo.InvariantCulture, out double value) ||
-            !(value > 0 && value <= 2000)) return;
+        if (chainColumn < 0 || cells.Length <= chainColumn) return;
+        double? displayed = ParseDuration(cells, displayedColumn), submitted = ParseDuration(cells, submittedColumn);
+        if (displayed == null && submitted == null) return;
         if (!samples.TryGetValue(cells[chainColumn], out var chain))
         {
             if (samples.Count >= 16) return;
-            samples.Add(cells[chainColumn], chain = new Queue<(DateTime, double)>());
+            samples.Add(cells[chainColumn], chain = new Queue<(DateTime, double?, double?)>());
         }
-        chain.Enqueue((now, value));
+        chain.Enqueue((now, displayed, submitted));
         if (chain.Count > 240) chain.Dequeue();
     }
 
-    public double? Read(DateTime now)
+    private static double? ParseDuration(string[] cells, int column) => column >= 0 && column < cells.Length &&
+        double.TryParse(cells[column], NumberStyles.Float, CultureInfo.InvariantCulture, out double value) &&
+        value > 0 && value <= 2000 ? value : (double?)null;
+
+    public double? Read(DateTime now, out bool submitted)
     {
-        Queue<(DateTime Time, double Duration)>? best = null;
+        Queue<(DateTime Time, double? Displayed, double? Submitted)>? best = null;
         foreach (var key in samples.Keys.ToArray())
         {
             var chain = samples[key];
@@ -172,6 +199,11 @@ internal sealed class FrameCsv
             if (chain.Count == 0) samples.Remove(key);
             else if (best == null || chain.Count > best.Count) best = chain;
         }
-        return best?.Count >= 2 ? 1000 / best.Average(frame => frame.Duration) : null;
+        submitted = false;
+        if (best == null) return null;
+        if (best.Count(frame => frame.Displayed.HasValue) >= 2) return 1000 / best.Average(frame => frame.Displayed);
+        if (best.Count(frame => frame.Submitted.HasValue) < 2) return null;
+        submitted = true;
+        return 1000 / best.Average(frame => frame.Submitted);
     }
 }

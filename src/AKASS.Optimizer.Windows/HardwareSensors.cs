@@ -1,4 +1,5 @@
 using System;
+using System.Security.Principal;
 #if !NETFRAMEWORK
 using System.Linq;
 using LibreHardwareMonitor.Hardware;
@@ -6,8 +7,18 @@ using LibreHardwareMonitor.Hardware;
 
 namespace Akass.Optimizer;
 
+public enum CpuSensorStatus { Unavailable, DriverMissing, AccessRequired, Reading }
+
 public sealed class HardwareSensors : IDisposable
 {
+    public const string DriverPage = "https://pawnio.eu/";
+    private static readonly Lazy<bool> Elevated = new Lazy<bool>(() =>
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+    });
+    public static bool IsElevated() => Elevated.Value;
+
 #if !NETFRAMEWORK
     private Computer? computer;
     private DateTime retryAfter;
@@ -15,12 +26,12 @@ public sealed class HardwareSensors : IDisposable
     private bool disposed;
 #endif
 
-    public (double? Cpu, double? Gpu, string Adapter) Read()
+    public (double? Cpu, double? Gpu, string Adapter, CpuSensorStatus CpuStatus) Read()
     {
 #if !NETFRAMEWORK
         lock (gate)
         {
-            if (disposed || DateTime.UtcNow < retryAfter) return (null, null, "");
+            if (disposed || DateTime.UtcNow < retryAfter) return (null, null, "", CpuSensorStatus.Unavailable);
             try
             {
                 if (computer == null)
@@ -32,7 +43,8 @@ public sealed class HardwareSensors : IDisposable
                 string adapter = "";
                 foreach (var device in computer.Hardware)
                 {
-                    device.Update();
+                    try { device.Update(); }
+                    catch (Exception) { continue; }
                     var temperatures = device.Sensors.Where(s => s.SensorType == SensorType.Temperature &&
                         s.Value is float value && value > 0 && value < 130).ToArray();
                     bool processor = device.HardwareType == HardwareType.Cpu;
@@ -50,7 +62,8 @@ public sealed class HardwareSensors : IDisposable
                         adapter = device.Name;
                     }
                 }
-                return (cpu, gpu, adapter);
+                var cpuStatus = cpu.HasValue ? CpuSensorStatus.Reading : CpuReadingBlocked();
+                return (cpu, gpu, adapter, cpuStatus);
             }
             catch (Exception)
             {
@@ -59,10 +72,21 @@ public sealed class HardwareSensors : IDisposable
             }
         }
 #endif
-        return (null, null, "");
+        return (null, null, "", CpuSensorStatus.Unavailable);
     }
 
 #if !NETFRAMEWORK
+    private static CpuSensorStatus CpuReadingBlocked()
+    {
+        try
+        {
+            if (!LibreHardwareMonitor.PawnIo.PawnIo.IsInstalled) return CpuSensorStatus.DriverMissing;
+            if (!IsElevated()) return CpuSensorStatus.AccessRequired;
+        }
+        catch (Exception) { }
+        return CpuSensorStatus.Unavailable;
+    }
+
     private static bool HasName(ISensor sensor, params string[] names) =>
         names.Any(name => sensor.Name.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0);
 

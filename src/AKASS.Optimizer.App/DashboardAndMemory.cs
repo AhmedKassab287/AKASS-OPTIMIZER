@@ -303,12 +303,15 @@ internal sealed partial class MainWindow
             model.AutoMemoryTarget = selected.Row;
             onTargetChanged?.Invoke();
         });
-        var clearTarget = ActionButton(L("Use AKASS only", "استخدم AKASS فقط", "Yalnızca AKASS'i kullan"), () =>
+        var clearTarget = ActionButton(L("Remove selected app from automatic optimization", "إزالة التطبيق من تحسين الذاكرة التلقائي", "Uygulamayı otomatik bellek optimizasyonundan kaldır"), () =>
         {
             if (model.Busy) return;
             model.AutoMemoryTarget = null;
             onTargetChanged?.Invoke();
         });
+        clearTarget.ToolTip = L("Automatic optimization returns to managing the memory used by AKASS Optimizer itself.",
+            "بعد إزالة التطبيق المختار، يعود التحسين التلقائي إلى ذاكرة برنامج AKASS Optimizer نفسه.",
+            "Seçim kaldırılınca otomatik optimizasyon AKASS Optimizer'ın kendi belleğini yönetir.");
         autoTarget.IsEnabled = false;
         var trimSelected = ActionButton(L("Free selected app RAM", "تحرير ذاكرة التطبيق المحدد", "Seçili uygulama belleğini boşalt"), async () =>
         {
@@ -326,28 +329,35 @@ internal sealed partial class MainWindow
             trimSelected.IsEnabled = (table.SelectedItem as ProcessView)?.Row.CanClose == true;
             autoTarget.IsEnabled = model.Preferences.AutoMemory && trimSelected.IsEnabled;
         };
-        var close = ActionButton(L("Request close", "طلب الإغلاق", "Kapatmayı iste"), async () =>
+        var close = ActionButton(L("End application", "إنهاء التطبيق", "Uygulamayı sonlandır"), async () =>
         {
-            if (table.SelectedItem is not ProcessView selected || !selected.Row.CanClose)
-            { Status(L("Select an eligible application with a visible window.", "اختر تطبيقاً مؤهلاً له نافذة ظاهرة.", "Görünür penceresi olan uygun bir uygulama seçin.")); return; }
-            if (!Confirm(L("Save your work first. Send a normal close request to", "احفظ عملك أولاً. إرسال طلب إغلاق عادي إلى",
-                "Önce çalışmanızı kaydedin. Normal kapatma isteği gönderilsin mi:") + " " + selected.Name + "?", true)) return;
-            var result = await Run(L("Measuring before and after…", "جارٍ القياس قبل العملية وبعدها…", "Önceki ve sonraki değerler ölçülüyor…"),
-                token => Task.Run(async () =>
-                {
-                    var before = model.Metrics.Sample(model.Preferences.Sensitivity, false);
-                    bool sent = ProcessAnalyzer.CloseGracefully(selected.Row);
-                    if (sent) await Task.Delay(1600, token).ConfigureAwait(false);
-                    var current = model.Metrics.Sample(model.Preferences.Sensitivity, false);
-                    model.Store.Log("CloseApp", sent ? "WM_CLOSE sent" : "WM_CLOSE unavailable");
-                    return (before, current, sent);
-                }, token));
-            after.Text = (result.sent ? L("Close request sent. The app may ask to save your work.",
-                "أُرسل طلب الإغلاق. قد يطلب التطبيق حفظ عملك.", "Kapatma isteği gönderildi. Uygulama kaydetmenizi isteyebilir.") :
-                L("The selected application could not receive a close request.", "تعذر إرسال طلب إغلاق للتطبيق.", "Uygulamaya kapatma isteği gönderilemedi.")) +
-                "\n" + L("Available RAM", "الذاكرة المتاحة", "Kullanılabilir RAM") + "  " +
-                Size(result.before.Available) + " → " + Size(result.current.Available) + "   ·   " +
-                L("Commit", "الحجز", "Taahhüt") + "  " + Size(result.before.Commit) + " → " + Size(result.current.Commit);
+            if (table.SelectedItem is not ProcessView selected || !selected.Row.CanEnd)
+            {
+                Status(L("Select a running desktop application you own.", "اختر تطبيق سطح مكتب مفتوحاً بحسابك.", "Hesabınızla çalışan bir masaüstü uygulaması seçin."));
+                return;
+            }
+            if (!Confirm(L($"Close {selected.Name}? Save anything you are working on first.",
+                $"هل تريد إغلاق {selected.Name}؟ احفظ عملك أولاً.",
+                $"{selected.Name} kapatılsın mı? Önce çalışmanızı kaydedin."), true)) return;
+
+            var result = await Run(L("Closing the application…", "جارٍ إغلاق التطبيق…", "Uygulama kapatılıyor…"),
+                _ => Task.Run(() => ProcessAnalyzer.StopApplication(selected.Row, force: false)), false);
+            if (result.Remaining is { } remaining && Confirm(L(
+                $"{selected.Name} is still running. Force it and its background processes to exit? Unsaved work may be lost.",
+                $"ما زال {selected.Name} يعمل. هل تريد إنهاءه وإيقاف عملياته في الخلفية؟ قد تفقد العمل غير المحفوظ.",
+                $"{selected.Name} hâlâ çalışıyor. Arka plan işlemleriyle birlikte zorla kapatılsın mı? Kaydedilmeyen çalışmalar kaybolabilir."), true))
+                result = await Run(L("Stopping the application…", "جارٍ إنهاء التطبيق…", "Uygulama sonlandırılıyor…"),
+                    _ => Task.Run(() => ProcessAnalyzer.StopApplication(remaining, force: true)), false);
+
+            model.Store.Log("CloseApp", result.Result.ToString());
+            after.Text = result.Result switch
+            {
+                AppStopResult.Exited => L($"{selected.Name} stopped.", $"توقف {selected.Name}.", $"{selected.Name} sonlandırıldı."),
+                AppStopResult.StillRunning => L($"{selected.Name} is still running.", $"ما زال {selected.Name} يعمل.", $"{selected.Name} hâlâ çalışıyor."),
+                _ => L("The selected process exited or Windows denied access.", "انتهت العملية المحددة بالفعل أو منع Windows الوصول إليها.",
+                    "Seçilen işlem sona erdi veya Windows erişimi engelledi.")
+            };
+            lastProcessRefresh = DateTime.MinValue;
             Status("");
         });
         return Section(L("Review memory-heavy applications", "مراجعة التطبيقات الأكثر استهلاكاً", "Bellek kullanan uygulamaları incele"),

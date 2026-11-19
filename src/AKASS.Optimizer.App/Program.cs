@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
 using System.Security.Principal;
@@ -6,8 +7,8 @@ using System.Threading;
 using System.Windows;
 
 #if NETFRAMEWORK
-[assembly: System.Reflection.AssemblyVersion("1.3.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.3.0.0")]
+[assembly: System.Reflection.AssemblyVersion("1.3.1.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.3.1.0")]
 [assembly: System.Reflection.AssemblyCompany("Ahmed Kassab")]
 [assembly: System.Reflection.AssemblyProduct("AKASS Optimizer")]
 [assembly: System.Reflection.AssemblyTitle("AKASS Optimizer")]
@@ -41,7 +42,7 @@ public static class Program
 
         try
         {
-            int exitCode = RunDesktop(args, store, out string? installer);
+            int exitCode = RunDesktop(args, store, out string? installer, out bool restartElevated);
             if (installer != null)
             {
                 using var setup = Process.Start(new ProcessStartInfo
@@ -52,6 +53,17 @@ public static class Program
                 });
                 if (setup == null) throw new InvalidOperationException("Windows did not start the update installer.");
             }
+            else if (restartElevated)
+            {
+                using var current = Process.GetCurrentProcess();
+                var start = new ProcessStartInfo { FileName = current.MainModule!.FileName, UseShellExecute = true, Verb = "runas" };
+                try { Process.Start(start)?.Dispose(); }
+                catch (Win32Exception error) when (error.NativeErrorCode == 1223)
+                {
+                    start.Verb = "open";
+                    Process.Start(start)?.Dispose();
+                }
+            }
             return exitCode;
         }
         catch (Exception error)
@@ -61,9 +73,10 @@ public static class Program
         }
     }
 
-    private static int RunDesktop(string[] args, StateStore store, out string? installer)
+    private static int RunDesktop(string[] args, StateStore store, out string? installer, out bool restartElevated)
     {
         installer = null;
+        restartElevated = false;
         using var identity = WindowsIdentity.GetCurrent();
         using var installerGuard = new Mutex(false, @"Local\AKASS.Optimizer.InUse");
         using var instance = new Mutex(false, @"Local\AKASS.Optimizer.UI." + identity.User?.Value);
@@ -87,6 +100,7 @@ public static class Program
                 else new System.Windows.Interop.WindowInteropHelper(window).EnsureHandle();
                 int exitCode = app.Run();
                 installer = window.PendingInstaller;
+                restartElevated = window.PendingElevatedRestart;
                 return exitCode;
             }
             finally { signal.Unregister(null); }

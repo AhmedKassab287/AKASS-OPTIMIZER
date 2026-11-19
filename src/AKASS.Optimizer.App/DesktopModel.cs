@@ -51,8 +51,8 @@ public sealed class DesktopModel : INotifyPropertyChanged
                 var data = Metrics.Sample(Preferences.Sensitivity, includeNetwork);
                 if (includePerformance)
                 {
-                    (data.CpuTemperature, data.GpuTemperature, data.GpuAdapter) = Sensors.Read();
-                    (data.FramesPerSecond, data.FrameApp) = Frames.Read();
+                    (data.CpuTemperature, data.GpuTemperature, data.GpuAdapter, data.CpuSensorStatus) = Sensors.Read();
+                    (data.FramesPerSecond, data.FrameApp, data.FrameCaptureStatus) = Frames.Read();
                 }
                 else Frames.Stop();
                 return data;
