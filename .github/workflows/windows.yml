@@ -37,11 +37,16 @@ jobs:
         run: |
           $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { '' }
           ./scripts/New-Release.ps1 -InnoCompiler $env:AKASS_INNO_COMPILER -ExpectedTag $tag
-      - name: Verify installer branding and shortcuts
+      - name: Verify in-place upgrade, installer branding and shortcuts
         shell: pwsh
         run: |
           $version = ([xml](Get-Content Directory.Build.props -Raw)).Project.PropertyGroup.Version
-          ./scripts/Test-Installer.ps1 -SetupPath "artifacts/release/AKASS-Optimizer-$version-win-x64-setup.exe"
+          $baseline = Join-Path $env:RUNNER_TEMP 'AKASS-Optimizer-1.2.1-win-x64-setup.exe'
+          Invoke-WebRequest 'https://github.com/AhmedKassab287/AKASS-OPTIMIZER/releases/download/v1.2.1/AKASS-Optimizer-1.2.1-win-x64-setup.exe' -OutFile $baseline
+          if ((Get-FileHash -LiteralPath $baseline -Algorithm SHA256).Hash -ne '22a7caa8762280620730ce8dd9b26c84c7b7af703f5abe0ecccd4c063a99d777') {
+            throw 'The baseline installer SHA-256 does not match the published release.'
+          }
+          ./scripts/Test-Installer.ps1 -SetupPath "artifacts/release/AKASS-Optimizer-$version-win-x64-setup.exe" -BaselineSetupPath $baseline
       - name: Upload files for review
         uses: actions/upload-artifact@v4
         with:

@@ -257,6 +257,7 @@ internal sealed partial class MainWindow : Window
         generation++;
         refreshLive = null;
         refreshProcesses = null;
+        refreshUpdatePanel = null;
         lastProcessRefresh = DateTime.MinValue;
         foreach (var entry in navigation)
         {
@@ -314,6 +315,7 @@ internal sealed partial class MainWindow : Window
         try
         {
             if (exiting || testMode) return;
+            if (DateTime.UtcNow >= nextUpdateCheck) _ = CheckForUpdates(manual: false);
             var visible = IsVisible && WindowState != WindowState.Minimized;
             if (!await model.Sample(visible && page == Page.Monitor, overlay != null || (visible && page == Page.Monitor))) return;
             UpdateOverlay();

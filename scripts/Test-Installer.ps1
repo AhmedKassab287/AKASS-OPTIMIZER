@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$SetupPath)
+param([Parameter(Mandatory)][string]$SetupPath, [string]$BaselineSetupPath)
 
 $ErrorActionPreference = 'Stop'
 $setup = (Resolve-Path -LiteralPath $SetupPath).Path
@@ -64,8 +64,33 @@ $installDir = Join-Path $testRoot 'app'
 $null = New-Item -ItemType Directory -Path $testRoot
 $installLog = Join-Path $testRoot 'setup.log'
 $appExe = Join-Path $installDir 'AKASS.Optimizer.exe'
+$settingsFile = Join-Path $env:LOCALAPPDATA 'AKASS/Optimizer/settings.json'
+$createdSettings = $false
 try {
-    Invoke-Installer $setup ('/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /DIR="{0}" /LOG="{1}"' -f $installDir, $installLog)
+    $freshInstall = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /DIR="{0}" /LOG="{1}"' -f $installDir, $installLog
+    if ($BaselineSetupPath) {
+        if (Test-Path -LiteralPath $settingsFile) { throw 'The upgrade check requires a clean AKASS settings profile.' }
+        $baseline = (Resolve-Path -LiteralPath $BaselineSetupPath).Path
+        Invoke-Installer $baseline $freshInstall
+        $beforeVersion = (Get-ItemProperty -LiteralPath $uninstallKey).DisplayVersion
+        $beforeExeHash = (Get-FileHash -LiteralPath $appExe).Hash
+        $null = New-Item -Path (Split-Path -Parent $settingsFile) -ItemType Directory -Force
+        $fixture = '{"Language":"tr","Theme":"Light"}'
+        Set-Content -LiteralPath $settingsFile -Value $fixture -NoNewline
+        $createdSettings = $true
+
+        Invoke-Installer $setup ('/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /LOG="{0}"' -f $installLog)
+        $registration = Get-ItemProperty -LiteralPath $uninstallKey
+        if ([version]$registration.DisplayVersion -le [version]$beforeVersion -or
+            $registration.InstallLocation.TrimEnd('\') -ine $installDir -or
+            (Get-FileHash -LiteralPath $appExe).Hash -eq $beforeExeHash -or
+            (Get-Content -LiteralPath $settingsFile -Raw) -cne $fixture) {
+            throw 'The upgrade failed to update the registered installation and preserve its settings.'
+        }
+        Write-Output "PASS: upgraded $beforeVersion to $($registration.DisplayVersion) in its existing custom folder, preserving settings."
+    } else {
+        Invoke-Installer $setup $freshInstall
+    }
     if (!(Test-Path -LiteralPath $appExe -PathType Leaf)) { throw 'The application executable was not installed.' }
     Assert-AppIcon $appExe
     if ($setup -notlike '*-framework48-*') {
@@ -93,6 +118,7 @@ try {
     $uninstall = Get-ChildItem -LiteralPath $installDir -Filter 'unins*.exe' -File -ErrorAction SilentlyContinue |
         Select-Object -First 1
     if ($uninstall) { Invoke-Installer $uninstall.FullName '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' }
+    if ($createdSettings) { Remove-Item -LiteralPath $settingsFile }
 }
 if ((Test-Path -LiteralPath $desktopLink) -or (Test-Path -LiteralPath $startLink)) {
     throw 'Uninstallation left an AKASS shortcut behind.'

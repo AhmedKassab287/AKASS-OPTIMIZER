@@ -142,6 +142,7 @@ internal sealed partial class MainWindow
         }));
         AutomationProperties.SetAutomationId((Button)settingsActions.Children[0], "SaveSettings");
         body.Children.Add(settingsActions);
+        body.Children.Add(UpdatesPanel());
         body.Children.Add(SchedulePanel(settings));
         body.Children.Add(Section(L("Saved diagnostics", "بيانات التشخيص المحفوظة", "Kayıtlı tanılama"),
             Actions(ActionButton(L("Export activity log", "تصدير سجل النشاط", "Etkinlik günlüğünü dışa aktar"), ExportHistory),
@@ -311,6 +312,7 @@ internal sealed partial class MainWindow
         body.Children.Add(Intro(L("Local Windows maintenance, diagnostics and performance monitoring.",
             "صيانة Windows وتشخيصه ومراقبة الأداء محلياً.", "Yerel Windows bakımı, tanılama ve performans izleme.")));
         body.Children.Add(Actions(ActionButton("akass.dev", () => OpenShell("https://akass.dev"), true)));
+        body.Children.Add(UpdatesPanel());
         return Card(body);
     }
 

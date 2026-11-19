@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "1.2.1"
+  #define AppVersion "1.3.0"
 #endif
 #ifndef PackageDir
   #define PackageDir "..\artifacts\publish-win-x64"
@@ -18,8 +18,10 @@ AppVersion={#AppVersion}
 AppPublisher=Ahmed Kassab
 AppPublisherURL=https://akass.dev
 AppSupportURL=https://akass.dev
-AppUpdatesURL=https://akass.dev
+AppUpdatesURL=https://github.com/AhmedKassab287/AKASS-OPTIMIZER/releases/latest
 DefaultDirName={localappdata}\Programs\AKASS Optimizer
+UsePreviousAppDir=yes
+UsePreviousTasks=yes
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64os
@@ -52,12 +54,18 @@ Name: "{userdesktop}\AKASS Optimizer"; Filename: "{app}\AKASS.Optimizer.exe"; Wo
 
 [Run]
 Filename: "{app}\AKASS.Optimizer.exe"; Description: "{cm:LaunchProgram,AKASS Optimizer}"; Flags: nowait postinstall skipifsilent unchecked
+Filename: "{app}\AKASS.Optimizer.exe"; WorkingDir: "{app}"; Flags: nowait skipifnotsilent; Check: ReopenAfterUpdate
 
 [UninstallRun]
 Filename: "{app}\AKASS.Optimizer.exe"; Parameters: "--uninstall"; WorkingDir: "{app}"; Flags: runhidden waituntilterminated; RunOnceId: "UnregisterAkassMaintenance"
 
-#ifdef FrameworkFallback
 [Code]
+function ReopenAfterUpdate: Boolean;
+begin
+  Result := ExpandConstant('{param:AKASSUPDATE|0}') = '1';
+end;
+
+#ifdef FrameworkFallback
 function InitializeSetup: Boolean;
 var
   ReleaseValue: Cardinal;

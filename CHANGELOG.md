@@ -1,5 +1,10 @@
 # Release notes
 
+## 1.3.0
+
+- Settings and About check GitHub Releases for new stable versions. The app checks automatically while it runs and verifies the Windows installer against GitHub's SHA-256 digest before launching it with your approval.
+- The Windows installer upgrades AKASS in its existing location, keeping preferences, activity history, and shortcuts. Install 1.3.0 once to enable in-app updates. Portable users can check for updates and open GitHub Releases to download the current ZIP.
+
 ## 1.2.1
 
 - The global telemetry overlay uses a two-key shortcut, Ctrl+F10. The System Monitor button also toggles the overlay.

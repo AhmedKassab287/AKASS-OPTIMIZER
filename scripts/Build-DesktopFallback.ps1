@@ -10,7 +10,7 @@ if (!(Test-Path "$PSHOME/Microsoft.CodeAnalysis.CSharp.dll")) { throw 'PowerShel
 Add-Type -Path "$PSHOME/Microsoft.CodeAnalysis.dll"
 Add-Type -Path "$PSHOME/Microsoft.CodeAnalysis.CSharp.dll"
 $framework = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319'
-$assemblies = @('mscorlib','System','System.Core','System.Xml','System.Runtime.Serialization',
+$assemblies = @('mscorlib','System','System.Core','System.Xml','System.Runtime.Serialization','System.Net.Http',
     'System.Configuration','System.Drawing','System.Windows.Forms','Microsoft.CSharp',
     'Facades/System.ValueTuple','WPF/WindowsBase','WPF/PresentationCore','WPF/PresentationFramework','System.Xaml')
 $references = [Collections.Generic.List[Microsoft.CodeAnalysis.MetadataReference]]::new()

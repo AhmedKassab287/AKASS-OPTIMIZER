@@ -10,6 +10,17 @@ namespace Akass.Optimizer;
 
 internal static class FileSafety
 {
+    internal static void MarkInternetDownload(string path, Uri source)
+    {
+        const uint writeAccess = 0x40000000;
+        const uint createAlways = 2;
+        using var handle = CreateFile(@"\\?\" + path + ":Zone.Identifier:$DATA", writeAccess, 0, IntPtr.Zero,
+            createAlways, 0, IntPtr.Zero);
+        if (handle.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error());
+        using var writer = new StreamWriter(new FileStream(handle, FileAccess.Write));
+        writer.Write("[ZoneTransfer]\r\nZoneId=3\r\nHostUrl=" + source.AbsoluteUri + "\r\n");
+    }
+
     internal struct Identity
     {
         public uint Volume;

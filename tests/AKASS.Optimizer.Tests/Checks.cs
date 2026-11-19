@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 
 namespace Akass.Optimizer;
@@ -19,6 +20,44 @@ internal static class Checks
         Directory.CreateDirectory(root);
         try
         {
+            Test("GitHub updates stage only a complete, verified newer installer", () =>
+            {
+                const string asset = "AKASS-Optimizer-1.10.0-win-x64-setup.exe";
+                const string url = "https://github.com/AhmedKassab287/AKASS-OPTIMIZER/releases/download/v1.10.0/" + asset;
+                const string hash = "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+                GitHubUpdate? Read(Version current, string digest = hash, string location = url, bool preview = false)
+                {
+                    string metadata = "{\"tag_name\":\"v1.10.0\",\"prerelease\":" + (preview ? "true" : "false") +
+                        ",\"assets\":[{\"name\":\"" + asset + "\",\"browser_download_url\":\"" + location +
+                        "\",\"state\":\"uploaded\",\"size\":3,\"digest\":\"" + digest + "\"}]}";
+                    using var stream = new MemoryStream(Encoding.UTF8.GetBytes(metadata));
+                    return GitHubUpdate.ReadRelease(stream, current);
+                }
+
+                var older = new Version(1, 9, 5, 0);
+                var update = Read(older)!;
+                Equal(new Version(1, 10, 0), update.Version);
+                True(Read(new Version(1, 10, 0, 0)) == null);
+                True(Read(new Version(1, 11, 0)) == null);
+                True(Read(older, preview: true) == null);
+                Throws<InvalidDataException>(() => Read(older, digest: ""));
+                Throws<InvalidDataException>(() => Read(older, location: "https://example.com/" + asset));
+
+                string state = Path.Combine(root, "updates-state");
+                string Stage(string value)
+                {
+                    using var stream = new MemoryStream(Encoding.UTF8.GetBytes(value));
+                    return update.StageAsync(stream, state, CancellationToken.None).GetAwaiter().GetResult();
+                }
+
+                Throws<InvalidDataException>(() => Stage("ab"));
+                Throws<InvalidDataException>(() => Stage("abcd"));
+                Throws<InvalidDataException>(() => Stage("bad"));
+                True(!Directory.EnumerateFiles(Path.Combine(state, "Updates")).Any());
+                string path = Stage("abc");
+                Equal("abc", File.ReadAllText(path));
+                Equal(".exe", Path.GetExtension(path));
+            });
             Test("memory pressure and commit", () =>
             {
                 Equal(Pressure.Healthy, Policy.MemoryPressure(16 * Policy.GiB, 3 * Policy.GiB, 82, .55, false));

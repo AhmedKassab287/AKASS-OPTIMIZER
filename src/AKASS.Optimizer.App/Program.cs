@@ -1,12 +1,13 @@
 using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Security.Principal;
 using System.Threading;
 using System.Windows;
 
 #if NETFRAMEWORK
-[assembly: System.Reflection.AssemblyVersion("1.2.1.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.2.1.0")]
+[assembly: System.Reflection.AssemblyVersion("1.3.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.3.0.0")]
 [assembly: System.Reflection.AssemblyCompany("Ahmed Kassab")]
 [assembly: System.Reflection.AssemblyProduct("AKASS Optimizer")]
 [assembly: System.Reflection.AssemblyTitle("AKASS Optimizer")]
@@ -38,6 +39,31 @@ public static class Program
         if (args.Length == 2 && args[0] == "--smoke-ui") return DesktopSmoke.Run(args[1]);
         if (args.Length == 2 && args[0] == "--smoke-live") return DesktopSmoke.RunLive(args[1]);
 
+        try
+        {
+            int exitCode = RunDesktop(args, store, out string? installer);
+            if (installer != null)
+            {
+                using var setup = Process.Start(new ProcessStartInfo
+                {
+                    FileName = installer,
+                    Arguments = "/SILENT /NORESTART /SP- /AKASSUPDATE=1",
+                    UseShellExecute = true
+                });
+                if (setup == null) throw new InvalidOperationException("Windows did not start the update installer.");
+            }
+            return exitCode;
+        }
+        catch (Exception error)
+        {
+            MessageBox.Show("AKASS Optimizer\n\n" + error.Message, "AKASS Optimizer", MessageBoxButton.OK, MessageBoxImage.Error);
+            return 1;
+        }
+    }
+
+    private static int RunDesktop(string[] args, StateStore store, out string? installer)
+    {
+        installer = null;
         using var identity = WindowsIdentity.GetCurrent();
         using var installerGuard = new Mutex(false, @"Local\AKASS.Optimizer.InUse");
         using var instance = new Mutex(false, @"Local\AKASS.Optimizer.UI." + identity.User?.Value);
@@ -59,15 +85,11 @@ public static class Program
             {
                 if (!args.Contains("--tray") || !services.Preferences.Tray) window.Show();
                 else new System.Windows.Interop.WindowInteropHelper(window).EnsureHandle();
-                return app.Run();
+                int exitCode = app.Run();
+                installer = window.PendingInstaller;
+                return exitCode;
             }
             finally { signal.Unregister(null); }
-        }
-        catch (Exception error)
-        {
-            MessageBox.Show("AKASS Optimizer could not start.\n" + error.Message, "AKASS Optimizer",
-                MessageBoxButton.OK, MessageBoxImage.Error);
-            return 1;
         }
         finally { instance.ReleaseMutex(); }
     }

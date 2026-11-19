@@ -16,6 +16,12 @@ Open [GitHub Releases](https://github.com/AhmedKassab287/AKASS-OPTIMIZER/release
 
 The standard `win-x64` installer and ZIP include the .NET desktop runtime. Downloads labeled `framework48` use the .NET Framework installed on your PC. Builds are unsigned unless the specific release says otherwise. See the [release notes](CHANGELOG.md) and [known limitations](KNOWN_LIMITATIONS.md).
 
+## Update an existing copy
+
+Run the new setup EXE over your existing installation. It reuses the existing install folder and keeps your preferences and activity history. Close AKASS Optimizer first if setup asks you to, including the copy in the system tray.
+
+Starting with 1.3.0, open **Settings → Updates** or **About** and select **Check for updates**. The app also checks GitHub automatically while it is running. When a stable update is available, select **Install update**. AKASS downloads and verifies the installer, then closes so setup can update it and reopen the app. Windows may show its usual trust prompt. For a portable copy, open GitHub Releases from the same section and extract the latest ZIP.
+
 ## What it does
 
 | Area | Available actions |
