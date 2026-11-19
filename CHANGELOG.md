@@ -1,5 +1,12 @@
 # Release notes
 
+## 1.2.0
+
+- Manual cleanup scans all eligible file types in approved user and Windows Temp folders. Advanced cleanup previews old Prefetch traces. Smart Cleaner includes a separate DNS cache action.
+- Memory Optimizer shows hardware-reserved, in-use, modified, standby, free and cached RAM. Manual actions include trimming AKASS or a selected idle background application, clearing the standby list with elevation, and compacting the AKASS managed heap.
+- System Monitor shows CPU/GPU temperature and foreground-app displayed FPS. Toggle the top-right overlay with Ctrl+Alt+F10 or the System Monitor button. Borderless/windowed games can show the overlay.
+- Standard installer and portable package include LibreHardwareMonitor and Intel PresentMon 2.6.0. Sensor and frame data availability depends on hardware and Windows tracing permissions.
+
 ## 1.1.1
 
 - The installer creates an AKASS Optimizer desktop shortcut by default. You can clear the shortcut option during setup.

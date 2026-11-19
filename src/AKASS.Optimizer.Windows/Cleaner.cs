@@ -8,7 +8,7 @@ using System.Threading;
 
 namespace Akass.Optimizer;
 
-public enum CleanupKind { UserTemp, WindowsTemp, Chrome, Edge, Firefox, Thumbnails, Reports, Dumps, Recycle }
+public enum CleanupKind { UserTemp, WindowsTemp, Chrome, Edge, Firefox, Thumbnails, Reports, Dumps, Recycle, Prefetch }
 
 public sealed class CleanupGroup
 {
@@ -68,7 +68,8 @@ public sealed class Cleaner
     public CleanupScan Scan(CancellationToken token, IProgress<string>? progress = null, bool scheduled = false, bool advanced = false)
     {
         var specs = scheduled ? new[] { CleanupKind.UserTemp } : (CleanupKind[])Enum.GetValues(typeof(CleanupKind));
-        var groups = specs.Where(kind => advanced || kind != CleanupKind.Dumps && kind != CleanupKind.Reports).Select(kind => new CleanupGroup(kind)).ToArray();
+        var groups = specs.Where(kind => advanced || kind is not (CleanupKind.Dumps or CleanupKind.Reports or CleanupKind.Prefetch))
+            .Select(kind => new CleanupGroup(kind)).ToArray();
         var scan = new CleanupScan(groups);
         var visited = new HashSet<string>(StringComparer.Ordinal);
         int examined = 0;
@@ -87,20 +88,21 @@ public sealed class Cleaner
             {
                 var roots = Roots(group.Kind, scheduled).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
                 group.IsAvailable = roots.Length > 0;
-                var cutoff = DateTime.UtcNow.AddDays(scheduled ? -7 : Age(group.Kind));
+                var cutoff = Cutoff(group.Kind, scheduled);
                 foreach (var root in roots)
                 {
                     token.ThrowIfCancellationRequested();
                     if (!FileSafety.VerifyDirectory(root)) { group.Skipped++; continue; }
-                    var walk = new FileWalk(root, group.Kind != CleanupKind.Thumbnails && group.Kind != CleanupKind.Dumps,
+                    var walk = new FileWalk(root, group.Kind is not (CleanupKind.Thumbnails or CleanupKind.Dumps or CleanupKind.Prefetch),
                         token, () => group.Skipped++, () => ++examined > MaxEntries);
                     foreach (var path in walk.Files())
                     {
                         try
                         {
-                            if (!Matches(group.Kind, path) || File.GetLastWriteTimeUtc(path) >= cutoff ||
+                            if (!Matches(group.Kind, path, scheduled) || File.GetLastWriteTimeUtc(path) >= cutoff ||
                                 !FileSafety.Probe(path, out var identity) || identity.Links != 1 ||
-                                identity.Modified >= (ulong)cutoff.ToFileTimeUtc())
+                                identity.Modified >= (ulong)cutoff.ToFileTimeUtc() ||
+                                (VerifyCreation(group.Kind, scheduled) && identity.Created >= (ulong)cutoff.ToFileTimeUtc()))
                             { group.Skipped++; continue; }
                             if (!visited.Add(identity.Key)) continue;
                             group.Files.Add(new Candidate { Path = path, Root = root, Identity = identity });
@@ -147,7 +149,7 @@ public sealed class Cleaner
                     result.Issue(group.Kind.ToString(), e);
                     continue;
                 }
-                var cutoff = (ulong)DateTime.UtcNow.AddDays(scheduled ? -7 : Age(group.Kind)).ToFileTimeUtc();
+                var cutoff = (ulong)Cutoff(group.Kind, scheduled).ToFileTimeUtc();
                 int checkedCount = 0;
                 foreach (var file in group.Files)
                 {
@@ -155,7 +157,9 @@ public sealed class Cleaner
                     if (++checkedCount % 100 == 0) progress?.Report(group.Kind + " " + checkedCount + "/" + group.Files.Count);
                     try
                     {
-                        if (!allowedRoots.Contains(file.Root) || file.Identity.Modified >= cutoff || !Matches(group.Kind, file.Path) ||
+                        if (!allowedRoots.Contains(file.Root) || file.Identity.Modified >= cutoff ||
+                            (VerifyCreation(group.Kind, scheduled) && file.Identity.Created >= cutoff) ||
+                            !Matches(group.Kind, file.Path, scheduled) ||
                             !FileSafety.Delete(file.Root, file.Path, file.Identity))
                         { result.Skipped++; continue; }
                         result.Removed++;
@@ -178,6 +182,7 @@ public sealed class Cleaner
         {
             CleanupKind.UserTemp => UserTemp(scheduled),
             CleanupKind.WindowsTemp => new[] { Path.Combine(windows, "Temp") },
+            CleanupKind.Prefetch => new[] { Path.Combine(windows, "Prefetch") },
             CleanupKind.Chrome => Chromium(Path.Combine(local, "Google", "Chrome", "User Data")),
             CleanupKind.Edge => Chromium(Path.Combine(local, "Microsoft", "Edge", "User Data")),
             CleanupKind.Firefox => Firefox(),
@@ -250,14 +255,20 @@ public sealed class Cleaner
         }
     }
 
-    private static int Age(CleanupKind kind) => kind switch
+    private static DateTime Cutoff(CleanupKind kind, bool scheduled) => DateTime.UtcNow - TimeSpan.FromHours(kind switch
     {
-        CleanupKind.Reports or CleanupKind.Dumps => 14,
-        CleanupKind.UserTemp or CleanupKind.WindowsTemp => 1,
+        _ when scheduled => 7 * 24,
+        CleanupKind.Reports or CleanupKind.Dumps => 14 * 24,
+        CleanupKind.Prefetch => 7 * 24,
+        CleanupKind.UserTemp => 1,
+        CleanupKind.WindowsTemp => 24,
         _ => 0
-    };
+    });
 
-    private static bool Matches(CleanupKind kind, string file)
+    private static bool VerifyCreation(CleanupKind kind, bool scheduled) =>
+        !scheduled && (kind is CleanupKind.UserTemp or CleanupKind.WindowsTemp);
+
+    private static bool Matches(CleanupKind kind, string file, bool scheduled)
     {
         string name = Path.GetFileName(file);
         return kind switch
@@ -268,7 +279,9 @@ public sealed class Cleaner
                 (!string.Equals(Path.GetDirectoryName(file), Directory.GetParent(Environment.SystemDirectory)!.FullName,
                     StringComparison.OrdinalIgnoreCase) || name.Equals("MEMORY.DMP", StringComparison.OrdinalIgnoreCase)),
             CleanupKind.Edge or CleanupKind.Chrome or CleanupKind.Firefox or CleanupKind.Reports => true,
-            CleanupKind.UserTemp or CleanupKind.WindowsTemp => new[] { ".tmp", ".temp", ".etl", ".log" }
+            CleanupKind.Prefetch => name.EndsWith(".pf", StringComparison.OrdinalIgnoreCase),
+            CleanupKind.UserTemp or CleanupKind.WindowsTemp when !scheduled => true,
+            CleanupKind.UserTemp => new[] { ".tmp", ".temp", ".etl", ".log" }
                 .Contains(Path.GetExtension(name), StringComparer.OrdinalIgnoreCase),
             _ => !name.Equals("desktop.ini", StringComparison.OrdinalIgnoreCase) &&
                  !name.Equals("Thumbs.db", StringComparison.OrdinalIgnoreCase) &&

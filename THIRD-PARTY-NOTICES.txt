@@ -12,3 +12,12 @@ https://github.com/dotnet/winforms/blob/main/THIRD-PARTY-NOTICES.TXT
 
 The optional installer is built with Inno Setup by Jordan Russell and Martijn Laan.
 https://jrsoftware.org/files/is/license.txt
+
+The standard distribution includes LibreHardwareMonitorLib 0.9.6 under MPL 2.0.
+The library is unmodified. Its corresponding source and license are available at:
+https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/tree/v0.9.6
+https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/blob/v0.9.6/LICENSE
+
+The standard distribution includes the Intel PresentMon console application 2.6.0.
+The packaged tool includes its MIT license. Its source is available at:
+https://github.com/GameTechDev/PresentMon/tree/v2.6.0

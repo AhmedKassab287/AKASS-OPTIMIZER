@@ -82,6 +82,7 @@ internal sealed partial class MainWindow : Window
             if (e.PropertyName == nameof(model.Busy)) UpdateBusy();
         };
         Closing += ClosingWindow;
+        SourceInitialized += (_, __) => { if (!testMode) RegisterOverlayHotkey(); };
         Closed += (_, __) =>
         {
             clock.Stop();
@@ -89,6 +90,7 @@ internal sealed partial class MainWindow : Window
             tray.ContextMenuStrip?.Dispose();
             tray.Dispose();
             ownIcon?.Dispose();
+            ClosePerformanceViews();
             model.Metrics.Dispose();
             Application.Current.Shutdown();
         };
@@ -298,12 +300,13 @@ internal sealed partial class MainWindow : Window
         if (testMode) return;
         bool visible = IsVisible && WindowState != WindowState.Minimized;
         bool live = visible && (refreshLive != null || refreshProcesses != null || page == Page.Dashboard);
-        if (live || (visible && model.Preferences.AutoMemory) ||
+        if (overlay != null || live || (visible && model.Preferences.AutoMemory) ||
             model.Preferences.Tray && model.Preferences.Background)
         {
-            clock.Interval = TimeSpan.FromSeconds(live ? model.Preferences.Refresh : Math.Max(12, model.Preferences.Refresh));
+            clock.Interval = TimeSpan.FromSeconds(overlay != null ? 1 : live ? model.Preferences.Refresh : Math.Max(12, model.Preferences.Refresh));
             clock.Start();
         }
+        else model.Frames.Stop();
     }
 
     private async Task Tick()
@@ -312,7 +315,8 @@ internal sealed partial class MainWindow : Window
         {
             if (exiting || testMode) return;
             var visible = IsVisible && WindowState != WindowState.Minimized;
-            if (!await model.Sample(visible && page == Page.Monitor)) return;
+            if (!await model.Sample(visible && page == Page.Monitor, overlay != null || (visible && page == Page.Monitor))) return;
+            UpdateOverlay();
             if (exiting) return;
             await model.AutoOptimizeMemory(model.Preferences.AutoMemory &&
                 (visible || (model.Preferences.Tray && model.Preferences.Background)));

@@ -13,7 +13,7 @@ using Microsoft.Win32.SafeHandles;
 
 namespace Akass.Optimizer;
 
-public enum RepairKind { Sfc, DismScan, DismRestore, FlushDns, BatteryReport }
+public enum RepairKind { Sfc, DismScan, DismRestore, FlushDns, BatteryReport, ClearStandby }
 
 public sealed class ToolResult
 {
@@ -84,6 +84,7 @@ public static class RepairService
 
     internal static ToolResult RunCommand(RepairKind kind, string? reportPath, bool? xml)
     {
+        if (kind == RepairKind.ClearStandby) return MemoryMaintenance.ClearStandby();
         var (name, args) = kind switch
         {
             RepairKind.Sfc => ("sfc.exe", "/scannow"),

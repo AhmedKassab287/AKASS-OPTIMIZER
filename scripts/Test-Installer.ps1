@@ -68,6 +68,14 @@ try {
     Invoke-Installer $setup ('/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /DIR="{0}" /LOG="{1}"' -f $installDir, $installLog)
     if (!(Test-Path -LiteralPath $appExe -PathType Leaf)) { throw 'The application executable was not installed.' }
     Assert-AppIcon $appExe
+    if ($setup -notlike '*-framework48-*') {
+        $frameTool = Join-Path $installDir 'tools/PresentMon/PresentMon.exe'
+        if (!(Test-Path -LiteralPath $frameTool -PathType Leaf) -or
+            !(Test-Path -LiteralPath (Join-Path $installDir 'LibreHardwareMonitorLib.dll') -PathType Leaf)) {
+            throw 'The standard installer did not include its telemetry dependencies.'
+        }
+        Write-Output 'PASS: the standard installer includes PresentMon and LibreHardwareMonitor.'
+    }
     $shell = New-Object -ComObject WScript.Shell
     foreach ($linkPath in @($desktopLink, $startLink)) {
         if (!(Test-Path -LiteralPath $linkPath -PathType Leaf)) { throw "The installer did not create $linkPath." }

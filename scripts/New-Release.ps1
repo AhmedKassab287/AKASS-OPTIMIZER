@@ -25,6 +25,16 @@ try {
         & dotnet publish (Join-Path $root 'src/AKASS.Optimizer.App/AKASS.Optimizer.App.csproj') -c Release -r win-x64 `
             --self-contained true -p:PublishTrimmed=false -p:DebugType=none -o $work
         if ($LASTEXITCODE -ne 0) { throw 'Publishing the .NET desktop application failed.' }
+        $presentMon = New-Item -ItemType Directory -Path (Join-Path $work 'tools/PresentMon')
+        $presentMonExe = Join-Path $presentMon.FullName 'PresentMon.exe'
+        $presentMonDownload = 'https://github.com/GameTechDev/PresentMon/releases/download/v2.6.0/PresentMon-2.6.0-x64.exe'
+        Invoke-WebRequest -Uri $presentMonDownload -OutFile $presentMonExe
+        if ((Get-FileHash -LiteralPath $presentMonExe -Algorithm SHA256).Hash -ine
+            'b2a706bc6ad475749e3b7e3409263aa1e6906d45bdcf993f6dbc0f660188f1af') {
+            throw 'PresentMon did not match the pinned release digest.'
+        }
+        Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/GameTechDev/PresentMon/v2.6.0/LICENSE.txt' -OutFile (Join-Path $presentMon.FullName 'LICENSE.txt')
+        Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/LibreHardwareMonitor/LibreHardwareMonitor/v0.9.6/LICENSE' -OutFile (Join-Path $work 'LibreHardwareMonitor-LICENSE.txt')
     }
     Copy-Item -LiteralPath (Join-Path $root 'LICENSE.txt'), (Join-Path $root 'THIRD-PARTY-NOTICES.txt'),
         (Join-Path $root 'CHANGELOG.md'), (Join-Path $root 'docs/USER-GUIDE.md') -Destination $work

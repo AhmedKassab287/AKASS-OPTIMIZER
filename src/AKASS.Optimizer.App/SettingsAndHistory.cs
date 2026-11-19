@@ -54,7 +54,7 @@ internal sealed partial class MainWindow
         if (!launchReadable) launch.ToolTip = L("Windows blocked access to startup preferences.",
             "منع Windows الوصول إلى تفضيلات بدء التشغيل.", "Windows başlangıç tercihlerine erişimi engelledi.");
         var safeDefaults = ((CleanupKind[])Enum.GetValues(typeof(CleanupKind)))
-            .Where(x => x != CleanupKind.Recycle && x != CleanupKind.Reports && x != CleanupKind.Dumps)
+            .Where(x => x is not (CleanupKind.Recycle or CleanupKind.Reports or CleanupKind.Dumps or CleanupKind.Prefetch))
             .Select(kind => (kind, box: Check(words.Category(kind), settings.CleanupDefaults.Contains(kind.ToString())))).ToArray();
         AutomationProperties.SetAutomationId(traySetting, "SettingsTray");
         AutomationProperties.SetAutomationId(background, "SettingsBackground");

@@ -17,6 +17,8 @@ public sealed class DesktopModel : INotifyPropertyChanged
     public StartupService Startup { get; } = new StartupService();
     public ScheduleService Schedule { get; } = new ScheduleService();
     public Cleaner Cleaner { get; } = new Cleaner();
+    public HardwareSensors Sensors { get; } = new HardwareSensors();
+    public FrameMonitor Frames { get; } = new FrameMonitor();
     public LargeFileFinder LargeFiles { get; } = new LargeFileFinder();
     public Snapshot? Current { get; private set; }
     public IReadOnlyList<(double? Cpu, double? Memory)> Series => series.ToArray();
@@ -38,13 +40,23 @@ public sealed class DesktopModel : INotifyPropertyChanged
         LastMemoryOptimization = store.History().FirstOrDefault(x => x.Action == "AutoMemory" || x.Action == "ManualMemory");
     }
 
-    public async Task<bool> Sample(bool includeNetwork)
+    public async Task<bool> Sample(bool includeNetwork, bool includePerformance = false)
     {
         if (sampling) return false;
         sampling = true;
         try
         {
-            var sample = await Task.Run(() => Metrics.Sample(Preferences.Sensitivity, includeNetwork));
+            var sample = await Task.Run(() =>
+            {
+                var data = Metrics.Sample(Preferences.Sensitivity, includeNetwork);
+                if (includePerformance)
+                {
+                    (data.CpuTemperature, data.GpuTemperature, data.GpuAdapter) = Sensors.Read();
+                    (data.FramesPerSecond, data.FrameApp) = Frames.Read();
+                }
+                else Frames.Stop();
+                return data;
+            });
             Current = sample;
             series.Enqueue((sample.Cpu, sample.Total > 0 ? sample.Load : (double?)null));
             if (series.Count > 75) series.Dequeue();
@@ -73,9 +85,9 @@ public sealed class DesktopModel : INotifyPropertyChanged
         finally { optimizingMemory = false; }
     }
 
-    public async Task<ActivityRecord> OptimizeMemoryManually()
+    public async Task<ActivityRecord> OptimizeMemoryManually(ProcessRow? target = null)
     {
-        var record = await Task.Run(() => OptimizeMemory(null, null));
+        var record = await Task.Run(() => OptimizeMemory(target, null));
         LastMemoryOptimization = record;
         return record;
     }
@@ -89,7 +101,7 @@ public sealed class DesktopModel : INotifyPropertyChanged
             SystemMetrics.UserIdle() is not { } idle || idle < AutoMemoryPolicy.IdlePeriod))
             return new ActivityRecord { Action = action, Detail = "recovered" };
 
-        var measured = ProcessAnalyzer.TrimWorkingSet(target);
+        var measured = ProcessAnalyzer.TrimWorkingSet(target, requireUserIdle: automaticLimit.HasValue);
         var after = Metrics.Sample(includeNetwork: false);
         string detail = measured is { } trim
             ? string.Format(CultureInfo.InvariantCulture, "{0}|{1}|{2}|{3}|{4}", target?.Name ?? "AKASS Optimizer",

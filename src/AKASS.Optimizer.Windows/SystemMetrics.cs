@@ -19,6 +19,16 @@ public sealed class Snapshot
     public ulong? Installed { get; set; }
     public ulong Available { get; set; }
     public uint Load { get; set; }
+    public ulong? FreePages { get; set; }
+    public ulong? Standby { get; set; }
+    public ulong? Modified { get; set; }
+    public ulong? Cached => Standby + Modified;
+    public ulong? HardwareReserved => Installed >= Total && Total > 0 ? Installed - Total : null;
+    public double? CpuTemperature { get; set; }
+    public double? GpuTemperature { get; set; }
+    public string GpuAdapter { get; set; } = "";
+    public double? FramesPerSecond { get; set; }
+    public string FrameApp { get; set; } = "";
     public ulong? Commit { get; set; }
     public ulong? CommitLimit { get; set; }
     public double? CommitRatio => CommitLimit > 0 ? Commit / (double?)CommitLimit : null;
@@ -80,6 +90,7 @@ public sealed class SystemMetrics : IDisposable
             if (current.Total > 0)
                 current.Pressure = Policy.MemoryPressure(current.Total, current.Available, current.Load,
                     current.CommitRatio, current.WindowsLow, sensitivity);
+            (current.FreePages, current.Standby, current.Modified) = disk.ReadMemory();
             if (GetSystemTimes(out var idle, out var kernel, out var user))
             {
                 ulong total = kernel.Value + user.Value;
@@ -192,7 +203,7 @@ public sealed class SystemMetrics : IDisposable
 
     private sealed class DiskCounters : IDisposable
     {
-        private IntPtr query, read, write;
+        private IntPtr query, read, write, memoryQuery, free, core, normal, reserve, modified;
         public DiskCounters()
         {
             if (PdhOpenQuery(null, IntPtr.Zero, out query) != 0) { query = IntPtr.Zero; return; }
@@ -200,7 +211,21 @@ public sealed class SystemMetrics : IDisposable
                 read = IntPtr.Zero;
             if (PdhAddEnglishCounter(query, @"\PhysicalDisk(_Total)\Disk Write Bytes/sec", IntPtr.Zero, out write) != 0)
                 write = IntPtr.Zero;
+            if (PdhOpenQuery(null, IntPtr.Zero, out memoryQuery) != 0) { memoryQuery = IntPtr.Zero; return; }
+            free = MemoryCounter("Free & Zero Page List Bytes");
+            core = MemoryCounter("Standby Cache Core Bytes");
+            normal = MemoryCounter("Standby Cache Normal Priority Bytes");
+            reserve = MemoryCounter("Standby Cache Reserve Bytes");
+            modified = MemoryCounter("Modified Page List Bytes");
         }
+
+        private IntPtr MemoryCounter(string name) =>
+            PdhAddEnglishCounter(memoryQuery, @"\Memory\" + name, IntPtr.Zero, out var counter) == 0 ? counter : IntPtr.Zero;
+
+        public (ulong?, ulong?, ulong?) ReadMemory() =>
+            memoryQuery != IntPtr.Zero && PdhCollectQueryData(memoryQuery) == 0
+                ? ((ulong?)Counter(free), (ulong?)(Counter(core) + Counter(normal) + Counter(reserve)), (ulong?)Counter(modified))
+                : (null, null, null);
 
         public (double?, double?) Read() => query != IntPtr.Zero && PdhCollectQueryData(query) == 0 ?
             (Counter(read), Counter(write)) : (null, null);
@@ -212,7 +237,9 @@ public sealed class SystemMetrics : IDisposable
         public void Dispose()
         {
             if (query != IntPtr.Zero) PdhCloseQuery(query);
+            if (memoryQuery != IntPtr.Zero) PdhCloseQuery(memoryQuery);
             query = IntPtr.Zero;
+            memoryQuery = IntPtr.Zero;
         }
 
         [StructLayout(LayoutKind.Explicit)]
@@ -305,7 +332,7 @@ public sealed class ProcessAnalyzer
                                   e is InvalidOperationException || e is NotSupportedException) { return false; }
     }
 
-    public static (ulong Before, ulong After)? TrimWorkingSet(ProcessRow? target = null)
+    public static (ulong Before, ulong After)? TrimWorkingSet(ProcessRow? target = null, bool requireUserIdle = true)
     {
         try
         {
@@ -321,8 +348,8 @@ public sealed class ProcessAnalyzer
                 long cpu = process.TotalProcessorTime.Ticks;
                 System.Threading.Thread.Sleep(450);
                 if (process.TotalProcessorTime.Ticks - cpu > TimeSpan.FromMilliseconds(10).Ticks ||
-                    !CanTrimBackground(handle, process.Id) || SystemMetrics.UserIdle() is not { } idle ||
-                    idle < AutoMemoryPolicy.IdlePeriod) return null;
+                    !CanTrimBackground(handle, process.Id)) return null;
+                if (requireUserIdle && (SystemMetrics.UserIdle() is not { } idle || idle < AutoMemoryPolicy.IdlePeriod)) return null;
             }
 
             uint length = (uint)Marshal.SizeOf(typeof(ProcessMemory));

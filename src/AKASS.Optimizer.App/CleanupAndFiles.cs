@@ -142,6 +142,20 @@ internal sealed partial class MainWindow
                 "Güncelleme ve Teslim İyileştirme dosyaları için Windows Depolama ayarlarını kullanın. Küçük resimler yeniden oluşturulabilir. Prefetch uygulama yüklemelerine yardımcı olur.")),
             Actions(ActionButton(L("Open Storage settings", "فتح إعدادات التخزين", "Depolama ayarlarını aç"),
                 () => OpenShell("ms-settings:storagepolicies")))));
+        body.Children.Add(Section(L("System maintenance", "صيانة النظام", "Sistem bakımı"),
+            Muted(L("Manual scans include user Temp files older than one hour and Windows Temp files older than a day. Enable advanced maintenance for old Prefetch traces. Protected folders may require running AKASS as administrator.",
+                "يشمل الفحص اليدوي ملفات Temp للمستخدم الأقدم من ساعة وملفات Temp لنظام Windows الأقدم من يوم. فعّل الصيانة المتقدمة لإظهار ملفات Prefetch القديمة. قد تتطلب المجلدات المحمية تشغيل AKASS كمسؤول.",
+                "El ile tarama bir saatten eski kullanıcı ve bir günden eski Windows Temp dosyalarını içerir. Eski Prefetch dosyaları için gelişmiş bakımı etkinleştirin. Korumalı klasörler yönetici yetkisi gerektirebilir.")),
+            Actions(ActionButton(L("Flush DNS cache", "مسح ذاكرة DNS", "DNS önbelleğini temizle"), async () =>
+            {
+                if (!Confirm(L("Flush DNS cache? Windows may request administrator permission.",
+                    "مسح ذاكرة DNS المؤقتة؟ قد يطلب Windows صلاحية المسؤول.",
+                    "DNS önbelleği temizlensin mi? Windows yönetici izni isteyebilir."))) return;
+                var dns = await Run("DNS", token => RepairService.RunAsync(RepairKind.FlushDns, token), false);
+                model.Store.Log("WindowsTool", "DNS · " + dns.ExitCode);
+                Info(ExitLabel(dns) + "\n\n" + dns.Output);
+                Status(ExitLabel(dns));
+            }))));
         Display();
         return body;
     }
@@ -150,6 +164,12 @@ internal sealed partial class MainWindow
     {
         string text = group.Kind switch
         {
+            CleanupKind.UserTemp => L("User Temp files must be older than one hour. Locked and changed files are skipped.",
+                "يجب أن يتجاوز عمر ملف Temp ساعة واحدة. يتم تخطي الملفات المفتوحة والمتغيرة.",
+                "Kullanıcı Temp dosyaları bir saatten eski olmalıdır. Kilitli veya değişen dosyalar atlanır."),
+            CleanupKind.Prefetch => L("Only .pf files older than seven days are eligible. Windows may rebuild them and initial launches may take longer.",
+                "يُعرض فقط ما مضى عليه سبعة أيام من ملفات .pf. قد يعيد Windows إنشاءها وقد يستغرق أول تشغيل وقتاً أطول.",
+                "Yalnızca yedi günden eski .pf dosyaları uygundur. Windows bu dosyaları yeniden oluşturabilir ve ilk açılış uzayabilir."),
             CleanupKind.Recycle => L("The Windows tool empties the Recycle Bin for this account across supported drives.",
                 "تفرغ أداة Windows سلة المحذوفات لهذا الحساب على محركات الأقراص المدعومة.",
                 "Windows aracı bu hesabın desteklenen sürücülerdeki Geri Dönüşüm Kutusunu boşaltır."),

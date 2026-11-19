@@ -33,6 +33,7 @@ internal sealed class Language
 
     public string Category(CleanupKind value) => value switch
     {
+        CleanupKind.Prefetch => Pick("Old Windows Prefetch traces", "ملفات Prefetch القديمة", "Eski Windows Prefetch dosyaları"),
         CleanupKind.UserTemp => Pick("User temporary files", "ملفات المستخدم المؤقتة", "Kullanıcı geçici dosyaları"),
         CleanupKind.WindowsTemp => Pick("Windows temporary files", "ملفات Windows المؤقتة", "Windows geçici dosyaları"),
         CleanupKind.Chrome => Pick("Chrome cache", "ذاكرة Chrome المؤقتة", "Chrome önbelleği"),

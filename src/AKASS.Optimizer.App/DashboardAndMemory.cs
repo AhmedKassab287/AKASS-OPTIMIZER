@@ -96,7 +96,7 @@ internal sealed partial class MainWindow
             }, token));
         int count = analysis.start.Count(x => x.Enabled);
         var approvedGroups = analysis.scan.Groups.Where(x => x.Kind != CleanupKind.Recycle && x.Kind != CleanupKind.Dumps &&
-            x.Kind != CleanupKind.Reports).ToArray();
+            x.Kind != CleanupKind.Reports && x.Kind != CleanupKind.Prefetch).ToArray();
         ulong bytes = approvedGroups.Aggregate(0UL, (total, group) => total + group.Bytes);
         bool? cleanupOpportunity = bytes >= 512 * Policy.MiB ? true : analysis.scan.Limited ? (bool?)null : false;
         var score = Policy.Health(analysis.metrics.DiskFreeRatio, model.Sustained, analysis.startupIncomplete ? null : count, cleanupOpportunity);
@@ -161,6 +161,7 @@ internal sealed partial class MainWindow
         var chart = new HistoryChart(theme, false);
         var analysis = Muted("");
         var autoStatus = Muted("");
+        body.Children.Add(MemoryBreakdown(out var updateBreakdown));
         var autoResult = Muted("");
         void UpdateAuto()
         {
@@ -183,6 +184,7 @@ internal sealed partial class MainWindow
         body.Children.Add(Section(L("Automatic memory optimization", "تحسين الذاكرة التلقائي", "Otomatik bellek optimizasyonu"),
             autoStatus, autoResult, Actions(optimize, ActionButton(PageName(Page.Settings), () => Navigate(Page.Settings)))));
         UpdateAuto();
+        body.Children.Add(MemoryTools());
         body.Children.Add(Section(L("Physical memory history · %", "سجل الذاكرة الفعلية · %", "Fiziksel bellek geçmişi · %"), chart, analysis));
         body.Children.Add(ProcessesPanel(allowClose: true, onTargetChanged: UpdateAuto));
         var explanation = Intro(L("Working sets can include shared pages. The totals can overlap. Commit tracks allocated virtual memory that needs backing. A rise in available RAM alone does not measure responsiveness.",
@@ -192,6 +194,7 @@ internal sealed partial class MainWindow
         refreshLive = () =>
         {
             if (model.Current is not { } data) return;
+            updateBreakdown(data);
             UpdateAuto();
             physical.Value.Text = data.Total > 0 ? Size(data.Available) : "-";
             physical.Caption.Text = data.Total > 0 ? Size(data.Total - data.Available) + " / " + Size(data.Total) + " · " +
@@ -221,6 +224,7 @@ internal sealed partial class MainWindow
     private UIElement MonitorPage()
     {
         var body = Body();
+        body.Children.Add(PerformancePanel(out var updatePerformance));
         var cards = new UniformGrid { Columns = 3 };
         var cpu = Metric(cards, "CPU", theme.Blue);
         var disk = Metric(cards, L("Disk I/O", "قراءة وكتابة القرص", "Disk G/Ç"), theme.Accent);
@@ -234,6 +238,7 @@ internal sealed partial class MainWindow
         refreshLive = () =>
         {
             if (model.Current is not { } data) return;
+            updatePerformance(data);
             cpu.Value.Text = Percent(data.Cpu);
             cpu.Caption.Text = cpuName + " · " + Environment.ProcessorCount;
             disk.Value.Text = "↓ " + Rate(data.DiskRead);
@@ -305,8 +310,22 @@ internal sealed partial class MainWindow
             onTargetChanged?.Invoke();
         });
         autoTarget.IsEnabled = false;
+        var trimSelected = ActionButton(L("Free selected app RAM", "تحرير ذاكرة التطبيق المحدد", "Seçili uygulama belleğini boşalt"), async () =>
+        {
+            if (table.SelectedItem is not ProcessView selected || !selected.Row.CanClose) return;
+            if (!Confirm(L("Trim the working set of this background app?", "تقليص مجموعة عمل هذا التطبيق في الخلفية؟",
+                "Bu arka plan uygulamasının çalışma kümesi küçültülsün mü?") + "\n\n" + selected.Name)) return;
+            var result = await Run("RAM", _ => model.OptimizeMemoryManually(selected.Row), false);
+            after.Text = words.HistoryDetail(result);
+            onTargetChanged?.Invoke();
+            Status("");
+        });
+        trimSelected.IsEnabled = false;
         table.SelectionChanged += (_, __) =>
-            autoTarget.IsEnabled = model.Preferences.AutoMemory && (table.SelectedItem as ProcessView)?.Row.CanClose == true;
+        {
+            trimSelected.IsEnabled = (table.SelectedItem as ProcessView)?.Row.CanClose == true;
+            autoTarget.IsEnabled = model.Preferences.AutoMemory && trimSelected.IsEnabled;
+        };
         var close = ActionButton(L("Request close", "طلب الإغلاق", "Kapatmayı iste"), async () =>
         {
             if (table.SelectedItem is not ProcessView selected || !selected.Row.CanClose)
@@ -332,6 +351,6 @@ internal sealed partial class MainWindow
             Status("");
         });
         return Section(L("Review memory-heavy applications", "مراجعة التطبيقات الأكثر استهلاكاً", "Bellek kullanan uygulamaları incele"),
-            table, hint, Actions(close, autoTarget, clearTarget), after);
+            table, hint, Actions(trimSelected, close, autoTarget, clearTarget), after);
     }
 }

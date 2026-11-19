@@ -116,6 +116,35 @@ internal static class Checks
                 True(after.Cpu >= 0 && after.Cpu <= 100);
                 True(after.DriveTotal > 0 && after.DriveFree <= after.DriveTotal);
             });
+            Test("PresentMon displayed FPS selects the active swap chain and expires stale data", () =>
+            {
+                var frames = new FrameCsv();
+                var now = new DateTime(2026, 11, 19, 10, 0, 0, DateTimeKind.Utc);
+                frames.Add("Application,ProcessID,SwapChainAddress,MsBetweenPresents,MsBetweenDisplayChange", now);
+                frames.Add("\"Game, demo.exe\",100,0x1,100,16", now);
+                frames.Add("Game.exe,100,0x1,100,16", now.AddMilliseconds(16));
+                frames.Add("Game.exe,100,0x1,100,NA", now.AddMilliseconds(32));
+                frames.Add("Game.exe,100,0x2,100,3", now.AddMilliseconds(32));
+                Equal<double?>(62.5, frames.Read(now.AddMilliseconds(40)));
+                Equal<double?>(null, frames.Read(now.AddSeconds(3)));
+            });
+            Test("manual Temp cleanup previews old files beyond the scheduled extension filter", () =>
+            {
+                var folder = Under(root, "manual-temp");
+                var old = Path.Combine(folder, "installer.tmp.wav");
+                var current = Path.Combine(folder, "current.tmp");
+                File.WriteAllText(old, "temporary copy");
+                File.WriteAllText(current, "recent");
+                File.SetCreationTimeUtc(old, DateTime.UtcNow.AddDays(-8));
+                File.SetLastWriteTimeUtc(old, DateTime.UtcNow.AddDays(-8));
+                var cleaner = new Cleaner(folder);
+                var manual = cleaner.Scan(CancellationToken.None).Groups.Single(x => x.Kind == CleanupKind.UserTemp);
+                True(cleaner.Preview(manual, 500).Any(x => x.Path == old));
+                True(!cleaner.Preview(manual, 500).Any(x => x.Path == current));
+                var scheduled = cleaner.Scan(CancellationToken.None, scheduled: true).Groups.Single();
+                True(!cleaner.Preview(scheduled, 500).Any(x => x.Path == old));
+                True(File.Exists(old) && File.Exists(current));
+            });
             Test("running processes and stale target", () =>
             {
                 var sampler = new ProcessAnalyzer();

@@ -5,8 +5,8 @@ using System.Threading;
 using System.Windows;
 
 #if NETFRAMEWORK
-[assembly: System.Reflection.AssemblyVersion("1.1.1.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.1.1.0")]
+[assembly: System.Reflection.AssemblyVersion("1.2.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.2.0.0")]
 [assembly: System.Reflection.AssemblyCompany("Ahmed Kassab")]
 [assembly: System.Reflection.AssemblyProduct("AKASS Optimizer")]
 [assembly: System.Reflection.AssemblyTitle("AKASS Optimizer")]
@@ -58,6 +58,7 @@ public static class Program
             try
             {
                 if (!args.Contains("--tray") || !services.Preferences.Tray) window.Show();
+                else new System.Windows.Interop.WindowInteropHelper(window).EnsureHandle();
                 return app.Run();
             }
             finally { signal.Unregister(null); }
